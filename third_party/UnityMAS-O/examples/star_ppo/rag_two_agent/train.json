@@ -1,0 +1,47 @@
+[
+  {
+    "data_source": "rag_demo",
+    "question": "What is the capital of France?",
+    "ground_truth": "Paris",
+    "prompt": [
+      {
+        "role": "user",
+        "content": "What is the capital of France?"
+      }
+    ]
+  },
+  {
+    "data_source": "rag_demo",
+    "question": "Which river goes through Paris?",
+    "ground_truth": "Seine",
+    "prompt": [
+      {
+        "role": "user",
+        "content": "Which river goes through Paris?"
+      }
+    ]
+  },
+  {
+    "data_source": "rag_demo",
+    "question": "Which city is the capital of Germany?",
+    "ground_truth": "Berlin",
+    "prompt": [
+      {
+        "role": "user",
+        "content": "Which city is the capital of Germany?"
+      }
+    ]
+  },
+  {
+    "data_source": "rag_demo",
+    "question": "Name a famous landmark in Paris.",
+    "ground_truth": "Eiffel Tower",
+    "prompt": [
+      {
+        "role": "user",
+        "content": "Name a famous landmark in Paris."
+      }
+    ]
+  }
+]
+

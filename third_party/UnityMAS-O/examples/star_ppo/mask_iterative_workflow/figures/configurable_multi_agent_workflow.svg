@@ -1,0 +1,148 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="980" viewBox="0 0 1600 980">
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#263238"/>
+    </marker>
+    <marker id="arrowBlue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrowGreen" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#15803d"/>
+    </marker>
+    <style>
+      .title { font-family: "Avenir Next", "Helvetica Neue", Arial, sans-serif; font-size: 34px; font-weight: 800; fill: #172026; }
+      .subtitle { font-family: "Avenir Next", "Helvetica Neue", Arial, sans-serif; font-size: 17px; fill: #44515a; }
+      .section { font-family: "Avenir Next", "Helvetica Neue", Arial, sans-serif; font-size: 21px; font-weight: 800; fill: #172026; }
+      .label { font-family: "Avenir Next", "Helvetica Neue", Arial, sans-serif; font-size: 15px; fill: #263238; }
+      .small { font-family: "Avenir Next", "Helvetica Neue", Arial, sans-serif; font-size: 13px; fill: #455a64; }
+      .tiny { font-family: "Avenir Next", "Helvetica Neue", Arial, sans-serif; font-size: 12px; fill: #51636d; }
+      .mono { font-family: "SFMono-Regular", "Consolas", monospace; font-size: 12px; fill: #263238; }
+      .panel { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 2; rx: 24; }
+      .panelBlue { fill: #eff6ff; stroke: #93c5fd; stroke-width: 2; rx: 24; }
+      .panelGreen { fill: #f0fdf4; stroke: #86efac; stroke-width: 2; rx: 24; }
+      .panelAmber { fill: #fffbeb; stroke: #fcd34d; stroke-width: 2; rx: 24; }
+      .panelRed { fill: #fff1f2; stroke: #fda4af; stroke-width: 2; rx: 24; }
+      .node { fill: #ffffff; stroke: #64748b; stroke-width: 2; rx: 16; }
+      .nodeBlue { fill: #dbeafe; stroke: #3b82f6; stroke-width: 2; rx: 16; }
+      .nodeGreen { fill: #dcfce7; stroke: #22c55e; stroke-width: 2; rx: 16; }
+      .nodeAmber { fill: #fef3c7; stroke: #f59e0b; stroke-width: 2; rx: 16; }
+      .nodeRose { fill: #ffe4e6; stroke: #fb7185; stroke-width: 2; rx: 16; }
+      .arrow { stroke: #263238; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+      .arrowBlue { stroke: #2563eb; stroke-width: 2.5; fill: none; marker-end: url(#arrowBlue); }
+      .arrowGreen { stroke: #15803d; stroke-width: 2.5; fill: none; marker-end: url(#arrowGreen); }
+      .dash { stroke-dasharray: 8 7; }
+      .chip { fill: #ffffff; stroke: #94a3b8; stroke-width: 1.4; rx: 12; }
+      .rewardChip { fill: #ffffff; stroke: #16a34a; stroke-width: 1.6; rx: 12; }
+      .shadow { filter: drop-shadow(0 8px 18px rgba(15, 23, 42, 0.10)); }
+    </style>
+  </defs>
+
+  <rect width="1600" height="980" fill="#f6f8fb"/>
+
+  <text x="48" y="58" class="title">Configurable Multi-Agent RL Workflow with Free Reward Allocation</text>
+  <text x="50" y="89" class="subtitle">A workflow is defined by config + runner semantics; every executed node produces a trace record and can receive a custom reward.</text>
+
+  <rect x="45" y="130" width="260" height="265" class="panel shadow"/>
+  <text x="68" y="166" class="section">Task &amp; Config</text>
+  <rect x="68" y="190" width="214" height="52" class="node"/>
+  <text x="88" y="214" class="label">Dataset batch</text>
+  <text x="88" y="234" class="tiny">question, ground truth, query_id</text>
+  <rect x="68" y="260" width="214" height="95" class="nodeAmber"/>
+  <text x="88" y="286" class="label">Workflow YAML</text>
+  <text x="88" y="309" class="tiny">nodes, prompts, parsers</text>
+  <text x="88" y="328" class="tiny">model_id, tools, max_turns</text>
+  <text x="88" y="347" class="tiny">runner + reward allocator</text>
+
+  <rect x="360" y="118" width="650" height="470" class="panelBlue shadow"/>
+  <text x="386" y="154" class="section">WorkflowRunner: arbitrary execution semantics</text>
+  <text x="386" y="181" class="small">Supports serial, parallel, mixed, single-turn, and multi-turn workflows.</text>
+
+  <rect x="400" y="220" width="130" height="74" class="nodeBlue"/>
+  <text x="427" y="248" class="label">Node A</text>
+  <text x="416" y="270" class="tiny">agent_id</text>
+  <text x="416" y="287" class="tiny">model_id</text>
+  <rect x="600" y="220" width="130" height="74" class="nodeGreen"/>
+  <text x="627" y="248" class="label">Node B</text>
+  <text x="616" y="270" class="tiny">tool / LLM</text>
+  <text x="616" y="287" class="tiny">parser</text>
+  <rect x="800" y="220" width="130" height="74" class="nodeRose"/>
+  <text x="827" y="248" class="label">Node C</text>
+  <text x="817" y="270" class="tiny">trainable</text>
+  <text x="817" y="287" class="tiny">thin trace</text>
+
+  <path d="M530 257 L600 257" class="arrow"/>
+  <path d="M730 257 L800 257" class="arrow"/>
+  <text x="546" y="239" class="tiny">serial</text>
+
+  <rect x="470" y="355" width="120" height="62" class="node"/>
+  <text x="507" y="382" class="label">B1</text>
+  <text x="493" y="402" class="tiny">parallel</text>
+  <rect x="670" y="355" width="120" height="62" class="node"/>
+  <text x="707" y="382" class="label">B2</text>
+  <text x="693" y="402" class="tiny">parallel</text>
+  <rect x="570" y="462" width="120" height="62" class="nodeAmber"/>
+  <text x="603" y="489" class="label">Join</text>
+  <text x="593" y="509" class="tiny">merge state</text>
+  <path d="M665 294 C665 323, 530 322, 530 355" class="arrowBlue"/>
+  <path d="M665 294 C665 323, 730 322, 730 355" class="arrowBlue"/>
+  <path d="M530 417 C530 450, 630 435, 630 462" class="arrowBlue"/>
+  <path d="M730 417 C730 450, 630 435, 630 462" class="arrowBlue"/>
+  <text x="797" y="386" class="tiny">parallel fan-out / fan-in</text>
+
+  <path d="M880 294 C980 360, 930 505, 690 493" class="arrowGreen dash"/>
+  <text x="878" y="458" class="small">multi-turn loop</text>
+  <text x="878" y="478" class="tiny">while action != &lt;end&gt;</text>
+  <text x="878" y="496" class="tiny">and turn &lt; max_turns</text>
+
+  <rect x="380" y="612" width="610" height="205" class="panelGreen shadow"/>
+  <text x="406" y="648" class="section">WorkflowTrace: execution records</text>
+  <text x="406" y="675" class="small">Each node call is stored as a structured record for reward assignment and debugging.</text>
+  <rect x="412" y="704" width="548" height="82" class="node"/>
+  <text x="434" y="728" class="mono">WorkflowExecutionRecord</text>
+  <text x="434" y="750" class="tiny">node_id, agent_id, model_id, turn_id, step_id, node_type</text>
+  <text x="434" y="769" class="tiny">raw_output, parsed_output, state_before, state_after, thin trajectory</text>
+  <path d="M685 588 L685 612" class="arrowGreen"/>
+
+  <rect x="1080" y="118" width="460" height="300" class="panel shadow"/>
+  <text x="1106" y="154" class="section">Model resources &amp; scheduling</text>
+  <text x="1106" y="181" class="small">Agents are mapped to LLM engines; sharing is allowed.</text>
+  <rect x="1110" y="210" width="185" height="70" class="nodeBlue"/>
+  <text x="1129" y="236" class="label">reasoning_agent_llm</text>
+  <text x="1129" y="258" class="tiny">planning + answer share</text>
+  <rect x="1320" y="210" width="185" height="70" class="nodeGreen"/>
+  <text x="1357" y="236" class="label">search_agent</text>
+  <text x="1352" y="258" class="tiny">independent LLM</text>
+  <rect x="1110" y="305" width="185" height="70" class="nodeAmber"/>
+  <text x="1148" y="331" class="label">summary_agent</text>
+  <text x="1151" y="353" class="tiny">independent LLM</text>
+  <rect x="1320" y="305" width="185" height="70" class="nodeRose"/>
+  <text x="1360" y="331" class="label">update_agent</text>
+  <text x="1352" y="353" class="tiny">independent LLM</text>
+  <path d="M1010 275 L1080 275" class="arrow"/>
+
+  <rect x="1068" y="468" width="480" height="350" class="panelGreen shadow"/>
+  <text x="1094" y="504" class="section">RewardAllocator: arbitrary node rewards</text>
+  <text x="1094" y="531" class="small">Rewards are computed from the full trace, state transitions, and ground truth.</text>
+  <rect x="1098" y="560" width="415" height="68" class="rewardChip"/>
+  <text x="1120" y="586" class="mono">r_i = f_i(trace, record_i, K_before, K_after, y)</text>
+  <text x="1120" y="608" class="tiny">Assign to any node, any turn, any agent.</text>
+  <rect x="1098" y="650" width="190" height="76" class="nodeGreen"/>
+  <text x="1120" y="677" class="label">Absolute reward</text>
+  <text x="1120" y="699" class="tiny">plan / answer: F1</text>
+  <rect x="1323" y="650" width="190" height="76" class="nodeAmber"/>
+  <text x="1345" y="677" class="label">Turn-level reward</text>
+  <text x="1345" y="699" class="tiny">search/summary/update: ΔF1</text>
+  <rect x="1098" y="748" width="415" height="42" class="nodeRose"/>
+  <text x="1120" y="775" class="label">total = task_reward + format_weight × format_reward</text>
+  <path d="M990 714 L1068 714" class="arrowGreen"/>
+
+  <rect x="622" y="864" width="360" height="70" class="panelAmber shadow"/>
+  <text x="650" y="894" class="section">PPO / RL Trainer</text>
+  <text x="650" y="918" class="small">Commit per-node rewards to the matching rollout trajectories.</text>
+  <path d="M1308 818 C1230 900, 1040 900, 982 900" class="arrowGreen"/>
+  <path d="M685 817 L685 864" class="arrowGreen"/>
+
+  <path d="M305 260 L360 260" class="arrow"/>
+  <text x="312" y="242" class="tiny">batch</text>
+  <path d="M802 864 C790 815, 790 817, 790 817" class="arrowGreen"/>
+</svg>

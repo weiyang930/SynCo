@@ -1,0 +1,25 @@
+[
+  {
+    "data_source": "rag_demo",
+    "question": "What is the capital city of France?",
+    "ground_truth": "Paris",
+    "prompt": [
+      {
+        "role": "user",
+        "content": "What is the capital city of France?"
+      }
+    ]
+  },
+  {
+    "data_source": "rag_demo",
+    "question": "Paris is located on which river?",
+    "ground_truth": "Seine",
+    "prompt": [
+      {
+        "role": "user",
+        "content": "Paris is located on which river?"
+      }
+    ]
+  }
+]
+

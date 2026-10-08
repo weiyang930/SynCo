@@ -1,0 +1,163 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1120" viewBox="0 0 1800 1120">
+  <defs>
+    <marker id="arrowDark" markerWidth="13" markerHeight="13" refX="11" refY="6.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L11,6.5 L2,11 Z" fill="#24313a"/>
+    </marker>
+    <marker id="arrowBlue" markerWidth="13" markerHeight="13" refX="11" refY="6.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L11,6.5 L2,11 Z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrowGreen" markerWidth="13" markerHeight="13" refX="11" refY="6.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L11,6.5 L2,11 Z" fill="#15803d"/>
+    </marker>
+    <style>
+      .title { font-family: "Avenir Next", "Helvetica Neue", Arial, sans-serif; font-size: 36px; font-weight: 850; fill: #15232d; }
+      .subtitle { font-family: "Avenir Next", "Helvetica Neue", Arial, sans-serif; font-size: 18px; fill: #435461; }
+      .section { font-family: "Avenir Next", "Helvetica Neue", Arial, sans-serif; font-size: 22px; font-weight: 800; fill: #15232d; }
+      .label { font-family: "Avenir Next", "Helvetica Neue", Arial, sans-serif; font-size: 16px; font-weight: 650; fill: #20303a; }
+      .small { font-family: "Avenir Next", "Helvetica Neue", Arial, sans-serif; font-size: 14px; fill: #435461; }
+      .tiny { font-family: "Avenir Next", "Helvetica Neue", Arial, sans-serif; font-size: 12.5px; fill: #536774; }
+      .mono { font-family: "SFMono-Regular", "Consolas", monospace; font-size: 12.5px; fill: #26323a; }
+      .panel { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 2; rx: 28; }
+      .bluePanel { fill: #eff6ff; stroke: #93c5fd; stroke-width: 2; rx: 28; }
+      .greenPanel { fill: #f0fdf4; stroke: #86efac; stroke-width: 2; rx: 28; }
+      .amberPanel { fill: #fffbeb; stroke: #fcd34d; stroke-width: 2; rx: 28; }
+      .rosePanel { fill: #fff1f2; stroke: #fda4af; stroke-width: 2; rx: 28; }
+      .node { fill: #ffffff; stroke: #64748b; stroke-width: 2; rx: 17; }
+      .blue { fill: #dbeafe; stroke: #3b82f6; stroke-width: 2; rx: 17; }
+      .green { fill: #dcfce7; stroke: #22c55e; stroke-width: 2; rx: 17; }
+      .amber { fill: #fef3c7; stroke: #f59e0b; stroke-width: 2; rx: 17; }
+      .rose { fill: #ffe4e6; stroke: #fb7185; stroke-width: 2; rx: 17; }
+      .violet { fill: #ede9fe; stroke: #8b5cf6; stroke-width: 2; rx: 17; }
+      .chip { fill: #ffffff; stroke: #94a3b8; stroke-width: 1.5; rx: 13; }
+      .arrow { stroke: #24313a; stroke-width: 2.7; fill: none; marker-end: url(#arrowDark); }
+      .arrowBlue { stroke: #2563eb; stroke-width: 2.7; fill: none; marker-end: url(#arrowBlue); }
+      .arrowGreen { stroke: #15803d; stroke-width: 2.7; fill: none; marker-end: url(#arrowGreen); }
+      .dash { stroke-dasharray: 8 8; }
+      .shadow { filter: drop-shadow(0 10px 22px rgba(15, 23, 42, 0.12)); }
+    </style>
+  </defs>
+
+  <rect width="1800" height="1120" fill="#f5f7fb"/>
+  <text x="56" y="62" class="title">Inference and Update Runtime: Agent IDs → LLM IDs → Resource Pools</text>
+  <text x="58" y="96" class="subtitle">Workflow nodes issue inference requests through agent_id; routing maps each agent to an LLM resource pool, and training updates are grouped by LLM ID.</text>
+
+  <rect x="60" y="145" width="380" height="760" class="panel shadow"/>
+  <text x="92" y="185" class="section">Workflow nodes</text>
+  <text x="92" y="214" class="small">A node is an execution site in the workflow.</text>
+  <rect x="105" y="255" width="275" height="84" class="blue"/>
+  <text x="130" y="285" class="label">Node 1</text>
+  <text x="130" y="309" class="mono">agent_id = planner</text>
+  <text x="130" y="329" class="tiny">prompt + parser + reward hook</text>
+  <rect x="105" y="375" width="275" height="84" class="green"/>
+  <text x="130" y="405" class="label">Node 2</text>
+  <text x="130" y="429" class="mono">agent_id = searcher</text>
+  <text x="130" y="449" class="tiny">may call an LLM or a tool</text>
+  <rect x="105" y="495" width="275" height="84" class="amber"/>
+  <text x="130" y="525" class="label">Node 3</text>
+  <text x="130" y="549" class="mono">agent_id = verifier</text>
+  <text x="130" y="569" class="tiny">custom output format</text>
+  <rect x="105" y="615" width="275" height="84" class="violet"/>
+  <text x="130" y="645" class="label">Node k</text>
+  <text x="130" y="669" class="mono">agent_id = answerer</text>
+  <text x="130" y="689" class="tiny">can share an LLM with another agent</text>
+  <rect x="105" y="750" width="275" height="84" class="chip"/>
+  <text x="130" y="780" class="label">Tool / deterministic node</text>
+  <text x="130" y="804" class="mono">agent_id = retriever</text>
+  <text x="130" y="824" class="tiny">no model update required</text>
+
+  <rect x="515" y="145" width="430" height="315" class="bluePanel shadow"/>
+  <text x="548" y="185" class="section">Agent-Model Assignment</text>
+  <text x="548" y="214" class="small">A many-to-one mapping supports LLM sharing.</text>
+  <rect x="558" y="250" width="345" height="155" class="node"/>
+  <text x="584" y="282" class="mono">planner  → llm_alpha</text>
+  <text x="584" y="312" class="mono">answerer → llm_alpha</text>
+  <text x="584" y="342" class="mono">searcher → llm_beta</text>
+  <text x="584" y="372" class="mono">verifier → llm_gamma</text>
+  <path d="M440 297 L515 297" class="arrowBlue"/>
+  <path d="M440 537 C500 537, 487 350, 515 350" class="arrowBlue"/>
+  <path d="M440 657 C500 657, 487 302, 515 302" class="arrowBlue"/>
+  <text x="462" y="275" class="tiny">agent_id</text>
+
+  <rect x="515" y="540" width="430" height="210" class="greenPanel shadow"/>
+  <text x="548" y="580" class="section">Trajectory routing</text>
+  <text x="548" y="609" class="small">Every trainable node returns a thin rollout trajectory.</text>
+  <rect x="558" y="642" width="345" height="66" class="chip"/>
+  <text x="584" y="668" class="mono">ExecutionRecord.thin + node reward</text>
+  <text x="584" y="690" class="tiny">routed by model_id / llm_id</text>
+
+  <rect x="1025" y="120" width="690" height="795" class="panel shadow"/>
+  <text x="1060" y="162" class="section">LLM resource pools on concrete nodes</text>
+  <text x="1060" y="191" class="small">Each LLM ID owns rollout serving and parameter update workers.</text>
+
+  <rect x="1070" y="230" width="600" height="180" class="bluePanel"/>
+  <text x="1100" y="263" class="label">Resource Pool A: llm_alpha</text>
+  <text x="1100" y="286" class="tiny">concrete GPU node group / Ray resource pool</text>
+  <rect x="1100" y="315" width="135" height="58" class="blue"/>
+  <text x="1121" y="339" class="label">Rollout</text>
+  <text x="1121" y="358" class="tiny">serve model</text>
+  <rect x="1302" y="315" width="135" height="58" class="node"/>
+  <text x="1328" y="339" class="label">LLM</text>
+  <text x="1320" y="358" class="tiny">weights θA</text>
+  <rect x="1505" y="315" width="135" height="58" class="green"/>
+  <text x="1525" y="339" class="label">Update</text>
+  <text x="1523" y="358" class="tiny">optimizer</text>
+  <path d="M1235 344 L1302 344" class="arrowBlue"/>
+  <path d="M1437 344 L1505 344" class="arrowGreen"/>
+  <path d="M1505 373 C1438 423, 1240 423, 1167 373" class="arrowGreen dash"/>
+  <text x="1300" y="395" class="tiny">refresh rollout weights</text>
+
+  <rect x="1070" y="460" width="600" height="180" class="greenPanel"/>
+  <text x="1100" y="493" class="label">Resource Pool B: llm_beta</text>
+  <text x="1100" y="516" class="tiny">another concrete node group</text>
+  <rect x="1100" y="545" width="135" height="58" class="blue"/>
+  <text x="1121" y="569" class="label">Rollout</text>
+  <text x="1121" y="588" class="tiny">serve model</text>
+  <rect x="1302" y="545" width="135" height="58" class="node"/>
+  <text x="1328" y="569" class="label">LLM</text>
+  <text x="1320" y="588" class="tiny">weights θB</text>
+  <rect x="1505" y="545" width="135" height="58" class="green"/>
+  <text x="1525" y="569" class="label">Update</text>
+  <text x="1523" y="588" class="tiny">optimizer</text>
+  <path d="M1235 574 L1302 574" class="arrowBlue"/>
+  <path d="M1437 574 L1505 574" class="arrowGreen"/>
+  <path d="M1505 603 C1438 653, 1240 653, 1167 603" class="arrowGreen dash"/>
+  <text x="1300" y="625" class="tiny">refresh rollout weights</text>
+
+  <rect x="1070" y="690" width="600" height="180" class="amberPanel"/>
+  <text x="1100" y="723" class="label">Resource Pool C: llm_gamma</text>
+  <text x="1100" y="746" class="tiny">independent model and optimizer state</text>
+  <rect x="1100" y="775" width="135" height="58" class="blue"/>
+  <text x="1121" y="799" class="label">Rollout</text>
+  <text x="1121" y="818" class="tiny">serve model</text>
+  <rect x="1302" y="775" width="135" height="58" class="node"/>
+  <text x="1328" y="799" class="label">LLM</text>
+  <text x="1320" y="818" class="tiny">weights θC</text>
+  <rect x="1505" y="775" width="135" height="58" class="green"/>
+  <text x="1525" y="799" class="label">Update</text>
+  <text x="1523" y="818" class="tiny">optimizer</text>
+  <path d="M1235 804 L1302 804" class="arrowBlue"/>
+  <path d="M1437 804 L1505 804" class="arrowGreen"/>
+  <path d="M1505 833 C1438 883, 1240 883, 1167 833" class="arrowGreen dash"/>
+  <text x="1300" y="855" class="tiny">refresh rollout weights</text>
+
+  <path d="M945 302 C988 302, 1010 320, 1070 344" class="arrowBlue"/>
+  <path d="M945 346 C1000 400, 1014 520, 1070 574" class="arrowBlue"/>
+  <path d="M945 378 C1010 500, 1014 720, 1070 804" class="arrowBlue"/>
+  <text x="974" y="292" class="tiny">inference requests</text>
+
+  <path d="M945 675 C1000 675, 1008 344, 1505 344" class="arrowGreen dash"/>
+  <path d="M945 675 C1000 675, 1008 574, 1505 574" class="arrowGreen dash"/>
+  <path d="M945 675 C1000 675, 1008 804, 1505 804" class="arrowGreen dash"/>
+  <text x="964" y="706" class="tiny">per-LLM trajectory batches</text>
+
+  <rect x="455" y="850" width="490" height="150" class="rosePanel shadow"/>
+  <text x="490" y="890" class="section">Trainer update cycle</text>
+  <text x="490" y="920" class="small">1. Collect trajectories and node-level rewards by llm_id.</text>
+  <text x="490" y="946" class="small">2. Run PPO/GRPO/custom optimizer inside each update worker.</text>
+  <text x="490" y="972" class="small">3. Sync updated parameters back to rollout workers.</text>
+  <path d="M700 750 L700 850" class="arrowGreen"/>
+
+  <rect x="1080" y="955" width="590" height="80" class="chip"/>
+  <text x="1110" y="986" class="label">Key abstraction</text>
+  <text x="1110" y="1012" class="small">agent_id defines behavior; llm_id defines parameter sharing and update ownership; resource pool defines physical placement.</text>
+</svg>

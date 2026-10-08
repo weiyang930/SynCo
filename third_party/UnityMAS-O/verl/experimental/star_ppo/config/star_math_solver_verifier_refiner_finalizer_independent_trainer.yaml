@@ -1,0 +1,298 @@
+hydra:
+  searchpath:
+    - file://verl/trainer/config
+
+defaults:
+  - star_ppo_trainer
+  - _self_
+
+trainer:
+  project_name: ${oc.env:PROJECT_NAME,star_math_multi_agent}
+  experiment_name: ${oc.env:EXPERIMENT_NAME,solver_verifier_refiner_finalizer_independent_qwen2_5_7b}
+  val_before_train: ${oc.decode:${oc.env:VAL_BEFORE_TRAIN,true}}
+  test_freq: ${oc.decode:${oc.env:TEST_FREQ,50}}
+  val_max_batches: ${oc.decode:${oc.env:VAL_MAX_BATCHES,-1}}
+  save_freq: ${oc.decode:${oc.env:SAVE_FREQ,300}}
+  llm_engines:
+    - model_id: solver_llm
+      nnodes: ${oc.decode:${oc.env:SOLVER_NNODES,1}}
+      n_gpus_per_node: ${oc.decode:${oc.env:SOLVER_GPUS_PER_NODE,${oc.env:AGENT_GPUS_PER_NODE,8}}}
+      accelerator_type: null
+      strategy: fsdp2
+      model_path: ${oc.env:SOLVER_MODEL_PATH,${oc.env:AGENT_MODEL_PATH,${oc.env:UNITYMAS_ROOT}/base_models/Qwen/Qwen2.5-7B-Instruct}}
+    - model_id: verifier_llm
+      nnodes: ${oc.decode:${oc.env:VERIFIER_NNODES,1}}
+      n_gpus_per_node: ${oc.decode:${oc.env:VERIFIER_GPUS_PER_NODE,${oc.env:AGENT_GPUS_PER_NODE,8}}}
+      accelerator_type: null
+      strategy: fsdp2
+      model_path: ${oc.env:VERIFIER_MODEL_PATH,${oc.env:AGENT_MODEL_PATH,${oc.env:UNITYMAS_ROOT}/base_models/Qwen/Qwen2.5-7B-Instruct}}
+    - model_id: refiner_llm
+      nnodes: ${oc.decode:${oc.env:REFINER_NNODES,1}}
+      n_gpus_per_node: ${oc.decode:${oc.env:REFINER_GPUS_PER_NODE,${oc.env:AGENT_GPUS_PER_NODE,8}}}
+      accelerator_type: null
+      strategy: fsdp2
+      model_path: ${oc.env:REFINER_MODEL_PATH,${oc.env:AGENT_MODEL_PATH,${oc.env:UNITYMAS_ROOT}/base_models/Qwen/Qwen2.5-7B-Instruct}}
+    - model_id: finalizer_llm
+      nnodes: ${oc.decode:${oc.env:FINALIZER_NNODES,1}}
+      n_gpus_per_node: ${oc.decode:${oc.env:FINALIZER_GPUS_PER_NODE,${oc.env:AGENT_GPUS_PER_NODE,8}}}
+      accelerator_type: null
+      strategy: fsdp2
+      model_path: ${oc.env:FINALIZER_MODEL_PATH,${oc.env:AGENT_MODEL_PATH,${oc.env:UNITYMAS_ROOT}/base_models/Qwen/Qwen2.5-7B-Instruct}}
+  routing:
+    policy: epoch_dynamic
+    refresh_every_epoch: true
+
+actor_rollout_ref:
+  hybrid_engine: false
+  nccl_timeout: ${oc.decode:${oc.env:NCCL_TIMEOUT_SECONDS,1800}}
+  model:
+    path: ${oc.env:ACTOR_MODEL_PATH,${oc.env:SOLVER_MODEL_PATH,${oc.env:AGENT_MODEL_PATH,${oc.env:UNITYMAS_ROOT}/base_models/Qwen/Qwen2.5-7B-Instruct}}}
+    tokenizer_path: ${oc.env:ACTOR_TOKENIZER_PATH,${oc.env:ACTOR_MODEL_PATH,${oc.env:SOLVER_MODEL_PATH,${oc.env:AGENT_MODEL_PATH,${oc.env:UNITYMAS_ROOT}/base_models/Qwen/Qwen2.5-7B-Instruct}}}}
+    use_remove_padding: ${oc.decode:${oc.env:USE_REMOVE_PADDING,true}}
+    enable_activation_offload: ${oc.decode:${oc.env:ACTOR_ENABLE_ACTIVATION_OFFLOAD,${oc.env:ENABLE_ACTIVATION_OFFLOAD,false}}}
+  actor:
+    ppo_mini_batch_size: ${oc.decode:${oc.env:ACTOR_PPO_MINI_BATCH_SIZE,64}}
+    ppo_micro_batch_size_per_gpu: ${oc.decode:${oc.env:ACTOR_PPO_MICRO_BATCH_SIZE_PER_GPU,2}}
+    use_dynamic_bsz: ${oc.decode:${oc.env:USE_DYNAMIC_BSZ,true}}
+    ulysses_sequence_parallel_size: ${oc.decode:${oc.env:ULYSSES_SEQUENCE_PARALLEL_SIZE,1}}
+    entropy_coeff: ${oc.decode:${oc.env:ACTOR_ENTROPY_COEFF,0}}
+    fsdp_config:
+      ulysses_sequence_parallel_size: ${oc.decode:${oc.env:ULYSSES_SEQUENCE_PARALLEL_SIZE,1}}
+      param_offload: ${oc.decode:${oc.env:ACTOR_FSDP_PARAM_OFFLOAD,${oc.env:FSDP_PARAM_OFFLOAD,false}}}
+      optimizer_offload: ${oc.decode:${oc.env:ACTOR_FSDP_OPTIMIZER_OFFLOAD,${oc.env:FSDP_OPTIMIZER_OFFLOAD,false}}}
+      offload_policy: ${oc.decode:${oc.env:ACTOR_FSDP_OFFLOAD_POLICY,${oc.env:FSDP_OFFLOAD_POLICY,false}}}
+    optim:
+      lr: ${oc.decode:${oc.env:ACTOR_LR,1e-6}}
+      lr_warmup_steps: ${oc.decode:${oc.env:ACTOR_LR_WARMUP_STEPS,10}}
+      weight_decay: ${oc.decode:${oc.env:ACTOR_WEIGHT_DECAY,0.1}}
+  ref:
+    log_prob_micro_batch_size_per_gpu: ${oc.decode:${oc.env:REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU,1}}
+    log_prob_use_dynamic_bsz: ${oc.decode:${oc.env:USE_DYNAMIC_BSZ,true}}
+    ulysses_sequence_parallel_size: ${oc.decode:${oc.env:ULYSSES_SEQUENCE_PARALLEL_SIZE,1}}
+    fsdp_config:
+      ulysses_sequence_parallel_size: ${oc.decode:${oc.env:ULYSSES_SEQUENCE_PARALLEL_SIZE,1}}
+      param_offload: ${oc.decode:${oc.env:REF_FSDP_PARAM_OFFLOAD,${oc.env:FSDP_PARAM_OFFLOAD,false}}}
+      offload_policy: ${oc.decode:${oc.env:REF_FSDP_OFFLOAD_POLICY,${oc.env:FSDP_OFFLOAD_POLICY,false}}}
+  rollout:
+    name: ${oc.env:ROLLOUT_NAME,vllm}
+    max_model_len: ${oc.decode:${oc.env:ROLLOUT_MAX_MODEL_LEN,16384}}
+    tensor_model_parallel_size: ${oc.decode:${oc.env:ROLLOUT_TENSOR_MODEL_PARALLEL_SIZE,2}}
+    prompt_length: ${oc.decode:${oc.env:ROLLOUT_PROMPT_LENGTH,8192}}
+    response_length: ${oc.decode:${oc.env:ROLLOUT_RESPONSE_LENGTH,4096}}
+    gpu_memory_utilization: ${oc.decode:${oc.env:ROLLOUT_GPU_MEMORY_UTILIZATION,0.70}}
+    max_num_batched_tokens: ${oc.decode:${oc.env:ROLLOUT_MAX_NUM_BATCHED_TOKENS,12288}}
+    max_num_seqs: ${oc.decode:${oc.env:ROLLOUT_MAX_NUM_SEQS,128}}
+    free_cache_engine: ${oc.decode:${oc.env:ROLLOUT_FREE_CACHE_ENGINE,true}}
+    enable_prefix_caching: ${oc.decode:${oc.env:ROLLOUT_ENABLE_PREFIX_CACHING,false}}
+    temperature: ${oc.decode:${oc.env:TEMPERATURE,1.0}}
+    top_p: ${oc.decode:${oc.env:TOP_P,1.0}}
+    top_k: ${oc.decode:${oc.env:TOP_K,-1}}
+    val_kwargs:
+      temperature: ${oc.decode:${oc.env:VAL_TEMPERATURE,0.7}}
+      top_p: ${oc.decode:${oc.env:VAL_TOP_P,0.7}}
+      top_k: ${oc.decode:${oc.env:TOP_K,-1}}
+      do_sample: ${oc.decode:${oc.env:VAL_DO_SAMPLE,true}}
+      n: 1
+    checkpoint_engine:
+      update_weights_bucket_megabytes: ${oc.decode:${oc.env:ROLLOUT_UPDATE_WEIGHTS_BUCKET_MB,3072}}
+    log_prob_micro_batch_size_per_gpu: ${oc.decode:${oc.env:ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU,2}}
+    log_prob_use_dynamic_bsz: ${oc.decode:${oc.env:USE_DYNAMIC_BSZ,true}}
+
+critic:
+  nccl_timeout: ${oc.decode:${oc.env:NCCL_TIMEOUT_SECONDS,1800}}
+  model:
+    path: ${oc.select:actor_rollout_ref.model.path,null}
+    tokenizer_path: ${oc.select:actor_rollout_ref.model.tokenizer_path,null}
+    enable_activation_offload: ${oc.decode:${oc.env:CRITIC_ENABLE_ACTIVATION_OFFLOAD,${oc.env:ENABLE_ACTIVATION_OFFLOAD,false}}}
+    use_remove_padding: ${oc.decode:${oc.env:USE_REMOVE_PADDING,true}}
+    fsdp_config:
+      ulysses_sequence_parallel_size: ${oc.decode:${oc.env:ULYSSES_SEQUENCE_PARALLEL_SIZE,1}}
+      param_offload: ${oc.decode:${oc.env:CRITIC_FSDP_PARAM_OFFLOAD,${oc.env:FSDP_PARAM_OFFLOAD,false}}}
+      optimizer_offload: ${oc.decode:${oc.env:CRITIC_FSDP_OPTIMIZER_OFFLOAD,${oc.env:FSDP_OPTIMIZER_OFFLOAD,false}}}
+      offload_policy: ${oc.decode:${oc.env:CRITIC_FSDP_OFFLOAD_POLICY,${oc.env:FSDP_OFFLOAD_POLICY,false}}}
+  ppo_micro_batch_size_per_gpu: ${oc.decode:${oc.env:CRITIC_PPO_MICRO_BATCH_SIZE_PER_GPU,2}}
+  ulysses_sequence_parallel_size: ${oc.decode:${oc.env:ULYSSES_SEQUENCE_PARALLEL_SIZE,1}}
+
+algorithm:
+  adv_estimator: ${oc.env:ADV_ESTIMATOR,gae}
+  use_kl_in_reward: ${oc.decode:${oc.env:USE_KL_IN_REWARD,false}}
+  kl_ctrl:
+    kl_coef: ${oc.decode:${oc.env:KL_COEF,0.0}}
+
+data:
+  dataset_root: ${oc.env:DATASET_ROOT,${oc.env:UNITYMAS_ROOT}/datasets/Math}
+  train_files: ${oc.env:TRAIN_JSONL,${oc.env:UNITYMAS_ROOT}/datasets/Math/DAPO-Math-17k/data/dapo-math-17k.question.jsonl}
+  val_files: ${oc.env:VAL_JSONL,${data.dataset_root}/MATH-500/test.jsonl}
+  prompt_key: prompt
+  train_batch_size: ${oc.decode:${oc.env:GEN_BATCH_SIZE,128}}
+  gen_batch_size: ${oc.decode:${oc.env:GEN_BATCH_SIZE,128}}
+  val_batch_size: ${oc.decode:${oc.env:VAL_BATCH_SIZE,128}}
+  max_prompt_length: ${oc.decode:${oc.env:DATA_MAX_PROMPT_LENGTH,8192}}
+  apply_chat_template_kwargs:
+    enable_thinking: ${oc.decode:${oc.env:QWEN_ENABLE_THINKING,false}}
+  filter_overlong_prompts: ${oc.decode:${oc.env:FILTER_OVERLONG_PROMPTS,false}}
+  truncation: left
+  custom_cls:
+    path: pkg://verl.experimental.star_ppo.datasets.math_jsonl_dataset
+    name: MathJsonlDataset
+
+ray_kwargs:
+  ray_init:
+    address: auto
+
+star:
+  workflow:
+    name: math_solver_verifier_refiner_finalizer_independent
+    llm_timeout_seconds: ${oc.decode:${oc.env:STAR_LLM_TIMEOUT_SECONDS,0}}
+    query_timeout_seconds: ${oc.decode:${oc.env:STAR_QUERY_TIMEOUT_SECONDS,0}}
+    tool_timeout_seconds: ${oc.decode:${oc.env:STAR_TOOL_TIMEOUT_SECONDS,0}}
+    max_inflight_queries: ${oc.decode:${oc.env:STAR_MAX_INFLIGHT_QUERIES,128}}
+    max_parallel_rollouts_per_model: ${oc.decode:${oc.env:STAR_MAX_PARALLEL_ROLLOUTS_PER_MODEL,32}}
+    per_infer_prompt_max_tokens: ${oc.decode:${oc.env:STAR_PER_INFER_PROMPT_MAX_TOKENS,7680}}
+    prompt_truncation_margin: ${oc.decode:${oc.env:STAR_PROMPT_TRUNCATION_MARGIN,512}}
+    runner:
+      path: pkg://verl.experimental.star_ppo.workflows.math_multi_agent_workflow
+      name: MathMultiAgentWorkflowRunner
+    reward_allocator:
+      path: pkg://verl.experimental.star_ppo.reward_allocators.math_final_answer
+      name: MathFinalAnswerRewardAllocator
+    question_candidates: ["question", "problem", "query", "extra_info.question"]
+    ground_truth_candidates: ["answer", "reward_model.ground_truth", "ground_truth", "target", "extra_info.answer"]
+    debug:
+      enabled: ${oc.decode:${oc.env:STAR_WORKFLOW_DEBUG,false}}
+      sample_index: ${oc.decode:${oc.env:STAR_WORKFLOW_DEBUG_SAMPLE_INDEX,0}}
+      max_chars: ${oc.decode:${oc.env:STAR_WORKFLOW_DEBUG_MAX_CHARS,800}}
+      sample_count: ${oc.decode:${oc.env:STAR_WORKFLOW_DEBUG_SAMPLE_COUNT,1}}
+      every_n_batches: ${oc.decode:${oc.env:STAR_WORKFLOW_DEBUG_EVERY_N_BATCHES,20}}
+      validation_enabled: ${oc.decode:${oc.env:STAR_VAL_DEBUG,true}}
+      validation_sample_count: ${oc.decode:${oc.env:STAR_VAL_DEBUG_SAMPLE_COUNT,1}}
+      validation_every_n_batches: ${oc.decode:${oc.env:STAR_VAL_DEBUG_EVERY_N_BATCHES,1}}
+      validation_max_chars: ${oc.decode:${oc.env:STAR_VAL_DEBUG_MAX_CHARS,0}}
+    math:
+      expose_ground_truth_to_prompts: ${oc.decode:${oc.env:MATH_EXPOSE_GROUND_TRUTH_TO_PROMPTS,false}}
+      max_state_chars: ${oc.decode:${oc.env:MATH_MAX_STATE_CHARS,12000}}
+      solver:
+        model_id: solver_llm
+        agent_id: solver_agent
+        output_key: solver
+        parser:
+          type: raw
+        reward:
+          format_weight: ${oc.decode:${oc.env:MATH_SOLVER_FORMAT_WEIGHT,1.0}}
+        prompt_template: |
+          /no_think
+          You are the Solver Agent.
+          Given a math problem, solve it step by step and provide the final answer.
+
+          Problem:
+          {problem}
+
+          Output strictly in this format only:
+          <SOLUTION>
+          step-by-step reasoning
+          </SOLUTION>
+          <ANSWER>
+          final answer only
+          </ANSWER>
+
+          Do not output anything outside these tags.
+      verifier:
+        model_id: verifier_llm
+        agent_id: verifier_agent
+        output_key: verifier
+        parser:
+          type: raw
+        reward:
+          format_weight: ${oc.decode:${oc.env:MATH_VERIFIER_FORMAT_WEIGHT,1.0}}
+        prompt_template: |
+          /no_think
+          You are the Verifier Agent.
+          Your task is to check whether the given solution correctly solves the math problem.
+          Do not rewrite the full solution unless necessary. Focus on identifying errors and giving useful feedback.
+
+          Problem:
+          {problem}
+
+          Initial Solution:
+          {solver_output}
+
+          Output strictly in this format only:
+          <STATUS>
+          correct / incorrect / uncertain
+          </STATUS>
+          <ERROR_TYPE>
+          none / calculation / reasoning / missing_case / misread_problem / format / unclear
+          </ERROR_TYPE>
+          <FEEDBACK>
+          concise feedback for the Refiner
+          </FEEDBACK>
+
+          Do not output anything outside these tags.
+      refiner:
+        model_id: refiner_llm
+        agent_id: refiner_agent
+        output_key: refiner
+        parser:
+          type: raw
+        reward:
+          format_weight: ${oc.decode:${oc.env:MATH_REFINER_FORMAT_WEIGHT,1.0}}
+        prompt_template: |
+          /no_think
+          You are the Refiner Agent.
+          Improve the initial solution based on the verifier's feedback.
+          If the verifier says the solution is correct, keep the solution but make it clearer and concise.
+          If the verifier identifies an error, correct the error and produce a revised solution.
+
+          Problem:
+          {problem}
+
+          Initial Solution:
+          {solver_output}
+
+          Verification Feedback:
+          {verifier_output}
+
+          Output strictly in this format only:
+          <REFINED_SOLUTION>
+          revised complete reasoning
+          </REFINED_SOLUTION>
+          <ANSWER>
+          revised final answer only
+          </ANSWER>
+
+          Do not output anything outside these tags.
+      finalizer:
+        model_id: finalizer_llm
+        agent_id: finalizer_agent
+        output_key: finalizer
+        parser:
+          type: raw
+        reward:
+          format_weight: ${oc.decode:${oc.env:MATH_FINALIZER_FORMAT_WEIGHT,1.0}}
+        prompt_template: |
+          /no_think
+          You are the Finalizer Agent.
+          Produce the final answer based on the problem, the initial solution, the verification feedback, and the refined solution.
+          Check consistency and output a clean final solution and final answer.
+
+          Problem:
+          {problem}
+
+          Initial Solution:
+          {solver_output}
+
+          Verification Feedback:
+          {verifier_output}
+
+          Refined Solution:
+          {refiner_output}
+
+          Output strictly in this format only:
+          <FINAL_SOLUTION>
+          concise final reasoning
+          </FINAL_SOLUTION>
+          <FINAL_ANSWER>
+          final answer only
+          </FINAL_ANSWER>
+
+          Do not output anything outside these tags.

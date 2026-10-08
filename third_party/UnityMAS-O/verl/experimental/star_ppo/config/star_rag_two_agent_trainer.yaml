@@ -1,0 +1,164 @@
+hydra:
+  searchpath:
+    - file://verl/trainer/config
+
+defaults:
+  - star_ppo_trainer
+  - _self_
+
+trainer:
+  experiment_name: star_rag_two_agent
+  llm_engines:
+    - model_id: rewrite_llm
+      nnodes: 1
+      n_gpus_per_node: 8
+      accelerator_type: null
+      strategy: fsdp2
+      model_path: null
+    - model_id: answer_llm
+      nnodes: 1
+      n_gpus_per_node: 8
+      accelerator_type: null
+      strategy: fsdp2
+      model_path: null
+  routing:
+    policy: epoch_dynamic
+    refresh_every_epoch: true
+
+star:
+  workflow:
+    name: graph_rag
+    max_inflight_queries: 32
+    max_parallel_rollouts_per_model: 32
+    runner:
+      path: pkg://verl.experimental.star_ppo.workflows.graph_workflow
+      name: GraphWorkflowRunner
+    question_candidates: ["question", "query", "problem"]
+    ground_truth_candidates: ["ground_truth", "answer", "target", "golden_answers", "reward_model"]
+    tools:
+      retriever:
+        type: simple_keyword
+        documents:
+          - "Paris is the capital and largest city of France."
+          - "Berlin is the capital city of Germany."
+          - "The Seine river flows through Paris."
+          - "The Eiffel Tower is a landmark in Paris."
+    graph:
+      start_nodes: ["rewrite"]
+      end_nodes: ["answer"]
+      max_steps: 12
+      stop_on_end: true
+      outcome_reward:
+        type: em
+        source: answer.final_answer
+        weight: 1.0
+      nodes:
+        rewrite:
+          type: llm
+          model_id: rewrite_llm
+          agent_id: query_rewriter
+          output_key: rewritten_query
+          parser:
+            type: json_key
+            key: rewritten_query
+          reward:
+            format_weight: 0.2
+            share_outcome: true
+          prompt_template: |
+            You are the Query Rewrite agent in a multi-agent RAG workflow.
+            Rewrite the user question into a concise retrieval query.
+            Output strictly valid JSON:
+            {{"rewritten_query":"<string>"}}
+            Question: {question}
+          next:
+            - to: retrieve_round1
+
+        retrieve_round1:
+          type: tool
+          tool: retriever
+          input_template: "{rewrite.rewritten_query}"
+          top_k: 10
+          output_key: docs_round1
+          next:
+            - to: doc_selector
+
+        doc_selector:
+          type: llm
+          model_id: rewrite_llm
+          agent_id: document_selector
+          output_key: selected_doc_ids
+          parser:
+            type: json_key
+            key: selected_doc_ids
+          reward:
+            format_weight: 0.1
+            share_outcome: true
+          prompt_template: |
+            You are the Document Selector agent.
+            Choose useful document ids for answering the question.
+            Output strictly valid JSON:
+            {{"selected_doc_ids":"comma-separated ids like 1,3,4"}}
+            Question: {question}
+            Retrieved Documents:
+            {retrieve_round1.docs_round1}
+          next:
+            - to: retrieve_round2
+              when: "len(str(nodes.get('doc_selector', {}).get('selected_doc_ids', '')).strip()) == 0"
+            - to: summary
+              when: "len(str(nodes.get('doc_selector', {}).get('selected_doc_ids', '')).strip()) > 0"
+
+        retrieve_round2:
+          type: tool
+          tool: retriever
+          input_template: "{question}"
+          top_k: 6
+          output_key: docs_round2
+          next:
+            - to: summary
+
+        summary:
+          type: llm
+          model_id: answer_llm
+          agent_id: summary_agent
+          output_key: summary
+          parser:
+            type: json_key
+            key: summary
+          reward:
+            format_weight: 0.1
+            share_outcome: true
+          prompt_template: |
+            You are the Summary agent.
+            Summarize stable core facts from candidate documents for final answering.
+            Output strictly valid JSON:
+            {{"summary":"<short evidence summary>"}}
+            Question: {question}
+            Round1 Docs:
+            {retrieve_round1.docs_round1}
+            Round2 Docs:
+            {retrieve_round2.docs_round2}
+            Selected IDs:
+            {doc_selector.selected_doc_ids}
+          next:
+            - to: answer
+
+        answer:
+          type: llm
+          model_id: answer_llm
+          agent_id: answer_generator
+          output_key: final_answer
+          parser:
+            type: json_key
+            key: final_answer
+          reward:
+            format_weight: 0.2
+            share_outcome: true
+          prompt_template: |
+            You are the Final Answer agent.
+            Produce the final short answer.
+            Output strictly valid JSON:
+            {{"final_answer":"<string>"}}
+            Question: {question}
+            Rewritten Query: {rewrite.rewritten_query}
+            Summary: {summary.summary}
+          next: []

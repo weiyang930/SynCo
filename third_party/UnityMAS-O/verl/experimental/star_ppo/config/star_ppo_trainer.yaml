@@ -1,0 +1,52 @@
+defaults:
+  - ppo_trainer
+  - _self_
+
+trainer:
+  topology: star
+  llm_engines:
+    - model_id: L0
+      nnodes: 1
+      n_gpus_per_node: 8
+      accelerator_type: null
+      strategy: fsdp2
+      model_path: null
+    - model_id: L1
+      nnodes: 1
+      n_gpus_per_node: 8
+      accelerator_type: null
+      strategy: fsdp2
+      model_path: null
+  routing:
+    policy: epoch_dynamic
+    refresh_every_epoch: true
+
+star:
+  workflow:
+    name: single_agent
+    max_inflight_queries: 64
+    max_parallel_rollouts_per_model: 32
+    query_timeout_seconds: 0
+    tool_timeout_seconds: 0
+  buffer:
+    max_items: 100000
+    ttl_seconds: 7200
+    dropped_query_ttl_seconds: 120
+    shuffle_ready: ${oc.decode:${oc.env:STAR_BUFFER_SHUFFLE_READY,true}}
+  reward:
+    mode: streaming
+    emit_intermediate_format: true
+  train:
+    drop_last: true
+    enforce_divisible_batch: true
+    max_ready_items: 0
+
+actor_rollout_ref:
+  rollout:
+    mode: async
+    free_cache_engine: false
+    calculate_log_probs: true
+
+algorithm:
+  rollout_correction:
+    bypass_mode: true

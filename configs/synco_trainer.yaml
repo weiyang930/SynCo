@@ -1,0 +1,179 @@
+# Hydra config for SynCo: Synthesizer-Reasoner co-training on UnityMAS-O ``star_ppo``.
+#
+# Launch through scripts/train.sh (it sets the environment variables read below). Defaults
+# reproduce the paper setting: two Qwen3-8B policies (full separation, one 8-GPU node each),
+# GRPO without KL, 32 tasks per step, K=4 Reasoner rollouts per task, 100 steps, gated
+# Synthesizer reward, report refreshed from the live pool every 5 steps.
+#
+# ``defaults: [star_ppo_trainer, _self_]`` resolves through UnityMAS-O's config dirs, which
+# scripts/train.sh adds with ``hydra.searchpath=[...]`` (from UNITYMAS_ROOT).
+
+defaults:
+  - star_ppo_trainer
+  - _self_
+
+trainer:
+  project_name: ${oc.env:PROJECT_NAME,synco}
+  experiment_name: ${oc.env:EXPERIMENT_NAME,synco_qwen3_8b}
+  logger: ["console", "tensorboard"]
+  val_before_train: ${oc.decode:${oc.env:VAL_BEFORE_TRAIN,false}}
+  test_freq: ${oc.decode:${oc.env:TEST_FREQ,50}}
+  save_freq: ${oc.decode:${oc.env:SAVE_FREQ,10}}
+  # star_ppo iterates the 32-row query file once per epoch -> 1 epoch = 1 training step.
+  total_epochs: ${oc.decode:${oc.env:TOTAL_EPOCHS,100}}
+  default_local_dir: ${oc.env:CKPTS_DIR}
+
+  # Full separation: one engine (policy) per role, each on its own node.
+  llm_engines:
+    - model_id: synthesizer_qwen3_8b
+      nnodes: ${oc.decode:${oc.env:SYNTHESIZER_NNODES,1}}
+      n_gpus_per_node: ${oc.decode:${oc.env:SYNTHESIZER_GPUS_PER_NODE,8}}
+      accelerator_type: null
+      strategy: fsdp2
+      model_path: ${oc.env:SYNTHESIZER_MODEL_PATH,${oc.env:BASE_MODEL_PATH}}
+    - model_id: reasoner_qwen3_8b
+      nnodes: ${oc.decode:${oc.env:REASONER_NNODES,1}}
+      n_gpus_per_node: ${oc.decode:${oc.env:REASONER_GPUS_PER_NODE,8}}
+      accelerator_type: null
+      strategy: fsdp2
+      model_path: ${oc.env:REASONER_MODEL_PATH,${oc.env:BASE_MODEL_PATH}}
+  routing:
+    policy: epoch_dynamic
+    refresh_every_epoch: true
+
+actor_rollout_ref:
+  hybrid_engine: false
+  model:
+    path: ${oc.env:BASE_MODEL_PATH}
+    tokenizer_path: ${oc.env:BASE_MODEL_PATH}
+    use_remove_padding: ${oc.decode:${oc.env:USE_REMOVE_PADDING,false}}
+    override_config:
+      attn_implementation: ${oc.env:ATTN_IMPLEMENTATION,sdpa}
+  actor:
+    ppo_mini_batch_size: ${oc.decode:${oc.env:ACTOR_PPO_MINI_BATCH_SIZE,32}}
+    ppo_micro_batch_size_per_gpu: ${oc.decode:${oc.env:ACTOR_PPO_MICRO_BATCH_SIZE_PER_GPU,1}}
+    use_dynamic_bsz: ${oc.decode:${oc.env:USE_DYNAMIC_BSZ,true}}
+    ppo_max_token_len_per_gpu: ${oc.decode:${oc.env:ACTOR_PPO_MAX_TOKEN_LEN_PER_GPU,8192}}
+    optim:
+      lr: ${oc.decode:${oc.env:ACTOR_LR,1e-6}}
+      lr_warmup_steps: ${oc.decode:${oc.env:ACTOR_LR_WARMUP_STEPS,10}}
+      weight_decay: ${oc.decode:${oc.env:ACTOR_WEIGHT_DECAY,0.1}}
+  rollout:
+    name: vllm
+    max_model_len: ${oc.decode:${oc.env:ROLLOUT_MAX_MODEL_LEN,8192}}
+    tensor_model_parallel_size: ${oc.decode:${oc.env:ROLLOUT_TENSOR_MODEL_PARALLEL_SIZE,8}}
+    prompt_length: ${oc.decode:${oc.env:ROLLOUT_PROMPT_LENGTH,2048}}
+    response_length: ${oc.decode:${oc.env:ROLLOUT_RESPONSE_LENGTH,6144}}
+    gpu_memory_utilization: ${oc.decode:${oc.env:ROLLOUT_GPU_MEMORY_UTILIZATION,0.3}}
+    free_cache_engine: true
+    max_num_seqs: ${oc.decode:${oc.env:ROLLOUT_MAX_NUM_SEQS,128}}
+    # Stable recipe used for the paper runs (CUDA graphs and prefix caching off).
+    enforce_eager: ${oc.decode:${oc.env:ROLLOUT_ENFORCE_EAGER,true}}
+    enable_prefix_caching: ${oc.decode:${oc.env:ROLLOUT_ENABLE_PREFIX_CACHING,false}}
+    temperature: 0.9
+    top_p: 0.95
+    checkpoint_engine:
+      update_weights_bucket_megabytes: ${oc.decode:${oc.env:UPDATE_WEIGHTS_BUCKET_MB,4096}}
+
+critic:
+  model:
+    path: ${oc.env:BASE_MODEL_PATH}
+    tokenizer_path: ${oc.env:BASE_MODEL_PATH}
+    override_config:
+      attn_implementation: ${oc.env:ATTN_IMPLEMENTATION,sdpa}
+
+algorithm:
+  adv_estimator: grpo
+  use_kl_in_reward: false
+  kl_ctrl:
+    kl_coef: 0.0
+
+data:
+  train_files: ${oc.env:SYNCO_TRAIN_QUERIES}
+  val_files: ${oc.env:SYNCO_VAL_QUERIES,${data.train_files}}
+  prompt_key: prompt
+  train_batch_size: ${oc.decode:${oc.env:GEN_BATCH_SIZE,32}}
+  gen_batch_size: ${oc.decode:${oc.env:GEN_BATCH_SIZE,32}}
+  val_batch_size: ${oc.decode:${oc.env:GEN_BATCH_SIZE,32}}
+  max_prompt_length: 4096
+  truncation: left
+
+ray_kwargs:
+  ray_init:
+    address: auto
+
+star:
+  workflow:
+    name: synth_reasoner
+    llm_timeout_seconds: 0
+    query_timeout_seconds: 0
+    tool_timeout_seconds: 0
+    max_inflight_queries: ${oc.decode:${oc.env:STAR_MAX_INFLIGHT_QUERIES,16}}
+    per_infer_prompt_max_tokens: 3840
+    prompt_truncation_margin: 256
+    # Closed loop: rebuild the Synthesizer report from this run's own pool every N steps
+    # (0 = never refresh; the Synthesizer then always sees the initial report).
+    report_refresh_every: ${oc.decode:${oc.env:REPORT_REFRESH_EVERY,5}}
+    report_max_chars: 4000
+    pool_recent_window: 500
+    runner:
+      path: pkg://synth_reasoner.unitymas_adapter.workflow_adapter
+      name: SynthReasonerWorkflowRunner
+    reward_allocator:
+      path: pkg://synth_reasoner.unitymas_adapter.reward_adapter
+      name: SynthReasonerRewardAllocator
+    question_candidates: ["pool_report"]
+    ground_truth_candidates: []
+    debug:
+      # Disabled by default to avoid writing sampled prompts and model outputs to logs.
+      enabled: ${oc.decode:${oc.env:STAR_WORKFLOW_DEBUG,false}}
+      sample_index: 0
+      max_chars: 1200
+      sample_count: 1
+      every_n_batches: 5
+      validation_enabled: false
+
+    synth_reasoner:
+      # true = co-training (both policies updated); false = Synthesizer frozen, Reasoner only.
+      train_synthesizer: ${oc.decode:${oc.env:TRAIN_SYNTHESIZER,true}}
+      train_reasoner: true
+      # Reward the allocator gives an invalid task (failed TaskVerifier gate).
+      invalid_synth_reward: -0.5
+      synth_reward_config:
+        # gated (default, paper): gate(quality) * gate(reliability) * teachability_peak(sr)
+        # additive: weighted sum of the five components below.
+        reward_mode: ${oc.env:SYNTH_REWARD_MODE,gated}
+        quality_gate_threshold: 0.5
+        reliability_gate_threshold: 0.5
+        teachability_easy_slope: 1.0
+        quality_weight: 0.30
+        reliability_weight: 0.20
+        teachability_weight: 0.20
+        novelty_weight: 0.15
+        report_alignment_weight: 0.15
+        invalid_reward: -0.5
+      reasoner_reward_config:
+        use_format_bonus: true
+        format_bonus: 0.1
+        normalize_to_unit: true
+        incorrect_format_only_reward: 0.0
+      synthesizer:
+        model_id: synthesizer_qwen3_8b
+        agent_id: synthesizer_agent
+        max_tokens: 6144
+        temperature: 1.0
+        top_p: 0.95
+        trainable: ${oc.decode:${oc.env:TRAIN_SYNTHESIZER,true}}
+        reward:
+          # Every non-empty output gets +0.1 (UnityMAS-O RewardAllocator.compose_reward).
+          format_weight: 0.1
+      reasoner:
+        model_id: reasoner_qwen3_8b
+        agent_id: reasoner_agent
+        rollouts_per_task: ${oc.decode:${oc.env:REASONER_ROLLOUTS_PER_TASK,4}}
+        max_tokens: 6144
+        temperature: 0.9
+        top_p: 0.95
+        trainable: true
+        reward:
+          format_weight: 0.1

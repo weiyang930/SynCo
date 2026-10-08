@@ -1,0 +1,350 @@
+hydra:
+  searchpath:
+    - file://verl/trainer/config
+
+defaults:
+  - star_ppo_trainer
+  - _self_
+
+trainer:
+  experiment_name: star_qd_retrieve_evidence_answer_f1_7b_4node
+  # Validation control:
+  # 1) run one validation pass before training starts
+  val_before_train: false
+  # 2) run validation every N training steps
+  test_freq: 50
+  # 4) validation uses at most N batches each run (-1 means full val set)
+  val_max_batches: ${oc.decode:${oc.env:VAL_MAX_BATCHES,5}}
+  # 3) save checkpoint every N training steps
+  save_freq: 300
+  llm_engines:
+    - model_id: decompose_agent_7b
+      nnodes: 1
+      n_gpus_per_node: 8
+      accelerator_type: null
+      strategy: fsdp2
+      model_path: ${oc.env:UNITYMAS_ROOT}/base_models/Qwen/Qwen2.5-7B-Instruct
+    - model_id: evidence_agent_7b
+      nnodes: 2
+      n_gpus_per_node: 8
+      accelerator_type: null
+      strategy: fsdp2
+      model_path: ${oc.env:UNITYMAS_ROOT}/base_models/Qwen/Qwen2.5-7B-Instruct
+    - model_id: answer_agent_7b
+      nnodes: 1
+      n_gpus_per_node: 8
+      accelerator_type: null
+      strategy: fsdp2
+      model_path: ${oc.env:UNITYMAS_ROOT}/base_models/Qwen/Qwen2.5-7B-Instruct
+  routing:
+    policy: epoch_dynamic
+    refresh_every_epoch: true
+
+actor_rollout_ref:
+  # Star detached actor/rollout workers require hybrid_engine to be disabled.
+  hybrid_engine: false
+  model:
+    path: ${oc.env:UNITYMAS_ROOT}/base_models/Qwen/Qwen2.5-7B-Instruct
+    tokenizer_path: ${oc.env:UNITYMAS_ROOT}/base_models/Qwen/Qwen2.5-7B-Instruct
+  actor:
+    ppo_mini_batch_size: ${oc.decode:${oc.env:ACTOR_PPO_MINI_BATCH_SIZE,64}}
+    ppo_micro_batch_size_per_gpu: ${oc.decode:${oc.env:ACTOR_PPO_MICRO_BATCH_SIZE_PER_GPU,2}}
+  ref:
+    log_prob_micro_batch_size_per_gpu: ${oc.decode:${oc.env:REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU,1}}
+  rollout:
+    # Required by rollout config. Options: hf / vllm / sglang / trtllm.
+    name: ${oc.env:ROLLOUT_NAME,vllm}
+    max_model_len: ${oc.decode:${oc.env:ROLLOUT_MAX_MODEL_LEN,12288}}
+    tensor_model_parallel_size: ${oc.decode:${oc.env:ROLLOUT_TENSOR_MODEL_PARALLEL_SIZE,2}}
+    free_cache_engine: ${oc.decode:${oc.env:ROLLOUT_FREE_CACHE_ENGINE,true}}
+    prompt_length: ${oc.decode:${oc.env:ROLLOUT_PROMPT_LENGTH,4096}}
+    response_length: ${oc.decode:${oc.env:ROLLOUT_RESPONSE_LENGTH,128}}
+    gpu_memory_utilization: ${oc.decode:${oc.env:ROLLOUT_GPU_MEMORY_UTILIZATION,0.20}}
+    max_num_batched_tokens: ${oc.decode:${oc.env:ROLLOUT_MAX_NUM_BATCHED_TOKENS,2048}}
+    max_num_seqs: ${oc.decode:${oc.env:ROLLOUT_MAX_NUM_SEQS,128}}
+    enable_prefix_caching: ${oc.decode:${oc.env:ROLLOUT_ENABLE_PREFIX_CACHING,false}}
+    checkpoint_engine:
+      update_weights_bucket_megabytes: ${oc.decode:${oc.env:ROLLOUT_UPDATE_WEIGHTS_BUCKET_MB,3072}}
+    log_prob_micro_batch_size_per_gpu: ${oc.decode:${oc.env:ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU,2}}
+
+critic:
+  model:
+    path: ${oc.select:actor_rollout_ref.model.path,null}
+    tokenizer_path: ${oc.select:actor_rollout_ref.model.path,null}
+  ppo_micro_batch_size_per_gpu: ${oc.decode:${oc.env:CRITIC_PPO_MICRO_BATCH_SIZE_PER_GPU,2}}
+
+data:
+  dataset_root: ${oc.env:DATASET_ROOT,${oc.env:UNITYMAS_ROOT}/datasets/data/verl_format_data}
+  dataset_name: ${oc.env:DATASET_NAME,hotpotqa}
+  train_files: ${oc.env:TRAIN_PARQUET,${data.dataset_root}/${data.dataset_name}/train_verl.parquet}
+  val_files: ${oc.env:VAL_PARQUET,${data.dataset_root}/${data.dataset_name}/test_verl.parquet}
+  train_batch_size: ${oc.decode:${oc.env:GEN_BATCH_SIZE,128}}
+  gen_batch_size: ${oc.decode:${oc.env:GEN_BATCH_SIZE,128}}
+  val_batch_size: ${oc.decode:${oc.env:VAL_BATCH_SIZE,128}}
+
+ray_kwargs:
+  ray_init:
+    # This workflow launches Ray head/workers outside main_ppo, so connect to existing cluster.
+    address: auto
+
+star:
+  workflow:
+    name: graph_query_decompose_retrieve_evidence_answer
+    llm_timeout_seconds: ${oc.decode:${oc.env:STAR_LLM_TIMEOUT_SECONDS,0}}
+    # split: share final outcome reward equally across llm nodes with share_outcome=true
+    # full: each shared node gets full final outcome reward
+    outcome_share_mode: full
+    max_inflight_queries: ${oc.decode:${oc.env:STAR_MAX_INFLIGHT_QUERIES,128}}
+    max_parallel_rollouts_per_model: ${oc.decode:${oc.env:STAR_MAX_PARALLEL_ROLLOUTS_PER_MODEL,32}}
+    per_infer_prompt_max_tokens: ${oc.decode:${oc.env:STAR_PER_INFER_PROMPT_MAX_TOKENS,4096}}
+    prompt_truncation_margin: ${oc.decode:${oc.env:STAR_PROMPT_TRUNCATION_MARGIN,128}}
+    debug:
+      enabled: ${oc.decode:${oc.env:STAR_WORKFLOW_DEBUG,false}}
+      sample_index: ${oc.decode:${oc.env:STAR_WORKFLOW_DEBUG_SAMPLE_INDEX,0}}
+      max_chars: ${oc.decode:${oc.env:STAR_WORKFLOW_DEBUG_MAX_CHARS,160}}
+      every_n_batches: ${oc.decode:${oc.env:STAR_WORKFLOW_DEBUG_EVERY_N_BATCHES,20}}
+    runner:
+      path: pkg://verl.experimental.star_ppo.workflows.graph_workflow
+      name: GraphWorkflowRunner
+    question_candidates: ["question", "query", "problem", "extra_info.question"]
+    ground_truth_candidates: ["answer", "ground_truth", "extra_info.answer", "reward_model.ground_truth", "reward_model"]
+    tools:
+      retriever:
+        type: query_api_pool
+        api_urls: ["http://retriever.example.com:8000/retrieve"]
+        timeout_seconds: 5
+      context_builder:
+        path: pkg://verl.experimental.star_ppo.tools.prompt_builders
+        name: SubQEvidenceContextBuilder
+    graph:
+      start_nodes: ["decompose"]
+      end_nodes: ["answer"]
+      max_steps: 10
+      stop_on_end: true
+      outcome_reward:
+        type: f1
+        source: answer.final_answer
+        weight: 1.0
+      nodes:
+        decompose:
+          type: llm
+          model_id: decompose_agent_7b
+          agent_id: decompose_agent
+          output_key: sub_queries
+          parser:
+            type: json_key
+            key: sub_queries
+            default: []
+            # Keep only first 3 sub-queries for downstream retrieval.
+            max_items: 3
+            valid_reward: 0.0
+            invalid_reward: -1.0
+          reward:
+            format_weight: 1.0
+            share_outcome: true
+          prompt_template: |
+            You are a query decomposition assistant.
+
+            Given one original user query, decompose it into 1 to 3 searchable sub-questions.
+
+            Requirements:
+            1. Return at least 1 sub-question.
+            2. Return at most 3 sub-questions.
+            3. Each sub-question must be concise and independently searchable.
+            4. Keep key entities, relations, and time constraints from the original query.
+            5. Do not answer the query.
+
+            Output strictly valid JSON:
+            {{"sub_queries":["sub-question 1","sub-question 2"]}}
+
+            Original query:
+            {question}
+          next:
+            - to: retrieve
+              when: "len(nodes.get('decompose', {}).get('sub_queries', []) or []) >= 1"
+            - to: answer
+              when: "len(nodes.get('decompose', {}).get('sub_queries', []) or []) == 0"
+
+        retrieve:
+          type: tool
+          tool: retriever
+          fail_open: true
+          input_source: "decompose.sub_queries"
+          batch_queries: true
+          top_k: 4
+          max_attempts: 5
+          output_key: retrieved_docs
+          next:
+            - to: evidence_1
+              when: "len(nodes.get('decompose', {}).get('sub_queries', []) or []) >= 1"
+            - to: evidence_2
+              when: "len(nodes.get('decompose', {}).get('sub_queries', []) or []) >= 2"
+            - to: evidence_3
+              when: "len(nodes.get('decompose', {}).get('sub_queries', []) or []) >= 3"
+            - to: answer
+              when: "len(nodes.get('decompose', {}).get('sub_queries', []) or []) == 0"
+
+        evidence_1:
+          type: llm
+          model_id: evidence_agent_7b
+          agent_id: evidence_agent
+          output_key: sub_evidence
+          parser:
+            type: tag
+            open_tag: "<sub_evidence>"
+            close_tag: "</sub_evidence>"
+            valid_reward: 0.0
+            invalid_reward: -1.0
+          reward:
+            format_weight: 1.0
+            share_outcome: true
+          prompt_template: |
+            You are an evidence summarization assistant.
+
+            Input:
+            - Original query
+            - One decomposed sub-question
+            - Retrieved passages for this sub-question
+
+            Task:
+            1. Extract concise key evidence from the retrieved passages that helps answer both the sub-question and the original query.
+            2. Keep only high-signal facts (entities, relations, dates, numbers, constraints).
+            3. If evidence is insufficient, output Unknown.
+
+            Output format (strict):
+            <sub_evidence>key evidence text</sub_evidence>
+
+            Original query:
+            {question}
+
+            Sub-question:
+            {decompose.sub_queries.0}
+            Retrieved top-4 passages:
+            {retrieve.retrieved_docs.0}
+          next:
+            - to: compose_context
+
+        evidence_2:
+          type: llm
+          model_id: evidence_agent_7b
+          agent_id: evidence_agent
+          output_key: sub_evidence
+          parser:
+            type: tag
+            open_tag: "<sub_evidence>"
+            close_tag: "</sub_evidence>"
+            valid_reward: 0.0
+            invalid_reward: -1.0
+          reward:
+            format_weight: 1.0
+            share_outcome: true
+          prompt_template: |
+            You are an evidence summarization assistant.
+
+            Input:
+            - Original query
+            - One decomposed sub-question
+            - Retrieved passages for this sub-question
+
+            Task:
+            1. Extract concise key evidence from the retrieved passages that helps answer both the sub-question and the original query.
+            2. Keep only high-signal facts (entities, relations, dates, numbers, constraints).
+            3. If evidence is insufficient, output Unknown.
+
+            Output format (strict):
+            <sub_evidence>key evidence text</sub_evidence>
+
+            Original query:
+            {question}
+
+            Sub-question:
+            {decompose.sub_queries.1}
+            Retrieved top-4 passages:
+            {retrieve.retrieved_docs.1}
+          next:
+            - to: compose_context
+
+        evidence_3:
+          type: llm
+          model_id: evidence_agent_7b
+          agent_id: evidence_agent
+          output_key: sub_evidence
+          parser:
+            type: tag
+            open_tag: "<sub_evidence>"
+            close_tag: "</sub_evidence>"
+            valid_reward: 0.0
+            invalid_reward: -1.0
+          reward:
+            format_weight: 1.0
+            share_outcome: true
+          prompt_template: |
+            You are an evidence summarization assistant.
+
+            Input:
+            - Original query
+            - One decomposed sub-question
+            - Retrieved passages for this sub-question
+
+            Task:
+            1. Extract concise key evidence from the retrieved passages that helps answer both the sub-question and the original query.
+            2. Keep only high-signal facts (entities, relations, dates, numbers, constraints).
+            3. If evidence is insufficient, output Unknown.
+
+            Output format (strict):
+            <sub_evidence>key evidence text</sub_evidence>
+
+            Original query:
+            {question}
+
+            Sub-question:
+            {decompose.sub_queries.2}
+            Retrieved top-4 passages:
+            {retrieve.retrieved_docs.2}
+          next:
+            - to: compose_context
+
+        compose_context:
+          type: tool
+          tool: context_builder
+          fail_open: true
+          input_source: "nodes"
+          output_key: qa_context
+          next:
+            - to: answer
+
+        answer:
+          type: llm
+          model_id: answer_agent_7b
+          agent_id: answer_agent
+          output_key: final_answer
+          parser:
+            type: tag
+            open_tag: "<final_answer>"
+            close_tag: "</final_answer>"
+            valid_reward: 0.0
+            invalid_reward: -1.0
+          reward:
+            format_weight: 1.0
+            share_outcome: true
+          prompt_template: |
+            You are the final answer agent.
+
+            Input:
+            - Original query
+            - Dynamic sub-question/evidence context
+
+            Task:
+            1. Synthesize a final answer to the original query using the provided context.
+            2. Keep the answer concise and factual.
+            3. If evidence is insufficient, output Unknown.
+
+            Output format (strict):
+            <final_answer>your final answer</final_answer>
+
+            Original query:
+            {question}
+
+            Sub-question/evidence context:
+            {compose_context.qa_context}
+          next: []

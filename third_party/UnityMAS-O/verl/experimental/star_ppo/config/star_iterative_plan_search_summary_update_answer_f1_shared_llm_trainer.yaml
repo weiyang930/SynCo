@@ -1,0 +1,288 @@
+hydra:
+  searchpath:
+    - file://verl/trainer/config
+
+defaults:
+  - star_ppo_trainer
+  - _self_
+
+trainer:
+  project_name: ${oc.env:PROJECT_NAME,verl_examples}
+  experiment_name: ${oc.env:EXPERIMENT_NAME,star_iterative_plan_search_summary_update_answer_f1_shared_llm}
+  val_before_train: ${oc.decode:${oc.env:VAL_BEFORE_TRAIN,true}}
+  test_freq: 50
+  val_max_batches: ${oc.decode:${oc.env:VAL_MAX_BATCHES,5}}
+  save_freq: 300
+  llm_engines:
+    - model_id: shared_agent_llm
+      nnodes: ${oc.decode:${oc.env:SHARED_AGENT_NNODES,${oc.env:REASONING_AGENT_NNODES,1}}}
+      n_gpus_per_node: ${oc.decode:${oc.env:SHARED_AGENT_GPUS_PER_NODE,${oc.env:REASONING_AGENT_GPUS_PER_NODE,8}}}
+      accelerator_type: null
+      strategy: fsdp2
+      model_path: ${oc.env:SHARED_MODEL_PATH,${oc.env:AGENT_MODEL_PATH,${oc.env:REASONING_MODEL_PATH,null}}}
+  routing:
+    policy: epoch_dynamic
+    refresh_every_epoch: true
+
+actor_rollout_ref:
+  hybrid_engine: false
+  nccl_timeout: ${oc.decode:${oc.env:NCCL_TIMEOUT_SECONDS,1800}}
+  model:
+    path: ${oc.env:ACTOR_MODEL_PATH,${oc.env:SHARED_MODEL_PATH,${oc.env:AGENT_MODEL_PATH,${oc.env:REASONING_MODEL_PATH,null}}}}
+    tokenizer_path: ${oc.env:ACTOR_TOKENIZER_PATH,${oc.env:ACTOR_MODEL_PATH,${oc.env:SHARED_MODEL_PATH,${oc.env:AGENT_MODEL_PATH,${oc.env:REASONING_MODEL_PATH,null}}}}}
+  actor:
+    ppo_mini_batch_size: ${oc.decode:${oc.env:ACTOR_PPO_MINI_BATCH_SIZE,64}}
+    ppo_micro_batch_size_per_gpu: ${oc.decode:${oc.env:ACTOR_PPO_MICRO_BATCH_SIZE_PER_GPU,2}}
+  ref:
+    log_prob_micro_batch_size_per_gpu: ${oc.decode:${oc.env:REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU,1}}
+  rollout:
+    name: ${oc.env:ROLLOUT_NAME,vllm}
+    max_model_len: ${oc.decode:${oc.env:ROLLOUT_MAX_MODEL_LEN,8192}}
+    tensor_model_parallel_size: ${oc.decode:${oc.env:ROLLOUT_TENSOR_MODEL_PARALLEL_SIZE,2}}
+    free_cache_engine: ${oc.decode:${oc.env:ROLLOUT_FREE_CACHE_ENGINE,true}}
+    prompt_length: ${oc.decode:${oc.env:ROLLOUT_PROMPT_LENGTH,8192}}
+    response_length: ${oc.decode:${oc.env:ROLLOUT_RESPONSE_LENGTH,128}}
+    gpu_memory_utilization: ${oc.decode:${oc.env:ROLLOUT_GPU_MEMORY_UTILIZATION,0.25}}
+    max_num_batched_tokens: ${oc.decode:${oc.env:ROLLOUT_MAX_NUM_BATCHED_TOKENS,4096}}
+    max_num_seqs: ${oc.decode:${oc.env:ROLLOUT_MAX_NUM_SEQS,128}}
+    enable_prefix_caching: ${oc.decode:${oc.env:ROLLOUT_ENABLE_PREFIX_CACHING,false}}
+    checkpoint_engine:
+      update_weights_bucket_megabytes: ${oc.decode:${oc.env:ROLLOUT_UPDATE_WEIGHTS_BUCKET_MB,3072}}
+    log_prob_micro_batch_size_per_gpu: ${oc.decode:${oc.env:ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU,2}}
+
+critic:
+  nccl_timeout: ${oc.decode:${oc.env:NCCL_TIMEOUT_SECONDS,1800}}
+  model:
+    path: ${oc.select:actor_rollout_ref.model.path,null}
+    tokenizer_path: ${oc.select:actor_rollout_ref.model.tokenizer_path,null}
+  ppo_micro_batch_size_per_gpu: ${oc.decode:${oc.env:CRITIC_PPO_MICRO_BATCH_SIZE_PER_GPU,2}}
+
+data:
+  dataset_root: ${oc.env:DATASET_ROOT,${oc.env:UNITYMAS_ROOT}/datasets/data/verl_format_data}
+  dataset_name: ${oc.env:DATASET_NAME,hotpotqa}
+  train_files: ${oc.env:TRAIN_PARQUET,${data.dataset_root}/${data.dataset_name}/train_verl.parquet}
+  val_files: ${oc.env:VAL_PARQUET,${data.dataset_root}/${data.dataset_name}/test_verl.parquet}
+  train_batch_size: ${oc.decode:${oc.env:GEN_BATCH_SIZE,128}}
+  gen_batch_size: ${oc.decode:${oc.env:GEN_BATCH_SIZE,128}}
+  val_batch_size: ${oc.decode:${oc.env:VAL_BATCH_SIZE,128}}
+
+ray_kwargs:
+  ray_init:
+    address: auto
+
+star:
+  workflow:
+    name: mask_iterative_turn_level
+    llm_timeout_seconds: ${oc.decode:${oc.env:STAR_LLM_TIMEOUT_SECONDS,0}}
+    query_timeout_seconds: ${oc.decode:${oc.env:STAR_QUERY_TIMEOUT_SECONDS,0}}
+    tool_timeout_seconds: ${oc.decode:${oc.env:STAR_TOOL_TIMEOUT_SECONDS,0}}
+    max_inflight_queries: ${oc.decode:${oc.env:STAR_MAX_INFLIGHT_QUERIES,128}}
+    max_parallel_rollouts_per_model: ${oc.decode:${oc.env:STAR_MAX_PARALLEL_ROLLOUTS_PER_MODEL,32}}
+    per_infer_prompt_max_tokens: ${oc.decode:${oc.env:STAR_PER_INFER_PROMPT_MAX_TOKENS,7168}}
+    prompt_truncation_margin: ${oc.decode:${oc.env:STAR_PROMPT_TRUNCATION_MARGIN,256}}
+    debug:
+      enabled: ${oc.decode:${oc.env:STAR_WORKFLOW_DEBUG,false}}
+      sample_index: ${oc.decode:${oc.env:STAR_WORKFLOW_DEBUG_SAMPLE_INDEX,0}}
+      max_chars: ${oc.decode:${oc.env:STAR_WORKFLOW_DEBUG_MAX_CHARS,200}}
+      sample_count: ${oc.decode:${oc.env:STAR_WORKFLOW_DEBUG_SAMPLE_COUNT,1}}
+      every_n_batches: ${oc.decode:${oc.env:STAR_WORKFLOW_DEBUG_EVERY_N_BATCHES,20}}
+      validation_enabled: ${oc.decode:${oc.env:STAR_VAL_DEBUG,true}}
+      validation_sample_count: ${oc.decode:${oc.env:STAR_VAL_DEBUG_SAMPLE_COUNT,1}}
+      validation_every_n_batches: ${oc.decode:${oc.env:STAR_VAL_DEBUG_EVERY_N_BATCHES,1}}
+      validation_max_chars: ${oc.decode:${oc.env:STAR_VAL_DEBUG_MAX_CHARS,0}}
+    runner:
+      path: pkg://verl.experimental.star_ppo.workflows.mask_iterative_workflow
+      name: MAskIterativeWorkflowRunner
+    reward_allocator:
+      path: pkg://verl.experimental.star_ppo.reward_allocators.mask_turn_level
+      name: MAskTurnLevelRewardAllocator
+    question_candidates: ["question", "query", "problem", "extra_info.question"]
+    ground_truth_candidates: ["answer", "ground_truth", "extra_info.answer", "reward_model.ground_truth", "reward_model"]
+    tools:
+      retriever:
+        type: query_api_pool
+        api_urls: ${oc.create:${oc.env:RETRIEVAL_API_URLS_JSON,'["http://retriever.example.com:8000/retrieve"]'}}
+        timeout_seconds: ${oc.decode:${oc.env:RETRIEVAL_TIMEOUT_SECONDS,5}}
+    mask:
+      max_turns: ${oc.decode:${oc.env:MASK_MAX_TURNS,3}}
+      stop_on_search_end: ${oc.decode:${oc.env:MASK_STOP_ON_SEARCH_END,true}}
+      retriever:
+        tool: retriever
+        top_k: ${oc.decode:${oc.env:STAR_RETRIEVE_TOP_K,5}}
+        max_attempts: ${oc.decode:${oc.env:STAR_RETRIEVE_MAX_ATTEMPTS,5}}
+        fail_open: ${oc.decode:${oc.env:STAR_RETRIEVE_FAIL_OPEN,true}}
+      plan:
+        model_id: shared_agent_llm
+        agent_id: planning_agent
+        output_key: knowledge_state
+        parser:
+          type: raw
+        reward:
+          format_weight: ${oc.decode:${oc.env:MASK_PLAN_FORMAT_WEIGHT,1.0}}
+        prompt_template: |
+          You are the Planning Agent in an iterative multi-agent QA workflow.
+
+          Task:
+          1. Decompose the question into a short sequence of sub-questions using only your own knowledge.
+          2. Answer each sub-question using only your own knowledge.
+          3. If you do not know the answer, write 'unkown' exactly.
+          4. Then give your current final answer to the original question.
+
+          Output strictly in this format only:
+          <q1>sub-question 1</q1>
+          <a1>answer 1</a1>
+          <q2>sub-question 2</q2>
+          <a2>answer 2</a2>
+          ...
+          <final_answer>your current answer</final_answer>
+
+          Rules:
+          - Use at most 5 sub-question/sub-answer pairs.
+          - Do not output any explanation outside these tags.
+      search:
+        model_id: shared_agent_llm
+        agent_id: search_agent
+        output_key: search_decision
+        parser:
+          type: raw
+        reward:
+          format_weight: ${oc.decode:${oc.env:MASK_SEARCH_FORMAT_WEIGHT,1.0}}
+        prompt_template: |
+          You are the Search Agent.
+
+          Input:
+          - The original question
+          - The current thinking trajectory
+          - The previous search queries
+
+          Task:
+          1. If any sub-question still has answer 'unkown' or is still unclear, generate one new searchable query.
+          2. If a missing reasoning hop is needed, generate one new searchable query.
+          3. Avoid queries that are identical or semantically similar to previous searches.
+          4. If no further search is needed, stop.
+
+          Output only one of these two formats:
+          <search>your query here</search>
+          <end>
+
+          Original question:
+          {question}
+
+          Thinking trajectory:
+          {thinking_trajectory_text}
+
+          Previous search queries:
+          {search_history_queries_text}
+      summary:
+        model_id: shared_agent_llm
+        agent_id: summary_agent
+        output_key: evidence_summary
+        parser:
+          type: raw
+        reward:
+          format_weight: ${oc.decode:${oc.env:MASK_SUMMARY_FORMAT_WEIGHT,1.0}}
+        prompt_template: |
+          You are an evidence extraction assistant.
+
+          Input:
+          - A search query
+          - Candidate documents for that query
+
+          Task:
+          1. Extract the key evidence that directly answers the query.
+          2. If no useful evidence exists, output 'No useful information'.
+
+          Output exactly in one of these two formats:
+          <evidence>your key evidence here</evidence>
+          No useful information
+
+          Search query:
+          {search_query}
+
+          Retrieved documents:
+          {retrieved_docs}
+      update:
+        model_id: shared_agent_llm
+        agent_id: update_agent
+        output_key: update_result
+        parser:
+          type: raw
+        reward:
+          format_weight: ${oc.decode:${oc.env:MASK_UPDATE_FORMAT_WEIGHT,1.0}}
+        prompt_template: |
+          You are an update detection assistant.
+
+          Input:
+          - The original question
+          - The current thinking trajectory
+          - The current predicted answer derived from the thinking trajectory
+          - One new query and its evidence
+
+          Task:
+          1. If the new query and evidence should replace one existing trajectory step, output that existing step id.
+          2. If the new query and evidence add a new reasoning hop, output the next new step id.
+
+          Output strictly one of these two formats only:
+          <update>t1</update>
+          <add>{next_step_target}</add>
+
+          Current knowledge state:
+          {knowledge_state_text}
+
+          New query:
+          {search_query}
+
+          New evidence:
+          {evidence_summary}
+      answer:
+        model_id: shared_agent_llm
+        agent_id: answer_agent
+        output_key: predicted_answer
+        parser:
+          type: raw
+        reward:
+          format_weight: ${oc.decode:${oc.env:MASK_ANSWER_FORMAT_WEIGHT,1.0}}
+        prompt_template: |
+          You are a final answer generation assistant.
+
+          Use the provided thinking trajectory to determine the answer to the original question.
+          Output only:
+          <final_answer>your answer here</final_answer>
+          No explanation. No reasoning.
+
+          Example:
+          Question: When did the simpsons first air on television?
+          Answer: <final_answer>December 17, 1989</final_answer>
+
+          Question: When did the lightning thief book come out?
+          Answer: <final_answer>2005</final_answer>
+
+          Question: Who said i'm late i'm late for a very important date?
+          Answer: <final_answer>The White Rabbit</final_answer>
+
+          Question: Where does the short happy life of francis macomber take place?
+          Answer: <final_answer>Africa</final_answer>
+
+          Question: What was the fourth expansion pack for sims 2?
+          Answer: <final_answer>Pets</final_answer>
+
+          Question: Voice of the snake in the jungle book?
+          Answer: <final_answer>The Jungle Book (2016 film)</final_answer>
+
+          Question: How many seasons are there of star wars the clone wars?
+          Answer: <final_answer>6</final_answer>
+
+          Question: Which us president appears as a character in the play annie?
+          Answer: <final_answer>Franklin D. Roosevelt</final_answer>
+
+          Question: Are Calochone and Adlumia both plants?
+          Answer: <final_answer>yes</final_answer>
+
+          Question: Yukio Mishima and Roberto Bolaño, are Chilean?
+          Answer: <final_answer>no</final_answer>
+
+          Original question:
+          {question}
+
+          Current thinking trajectory:
+          {thinking_trajectory_text}

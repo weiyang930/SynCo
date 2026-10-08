@@ -1,0 +1,201 @@
+diff --git a/tests/workers/rollout/test_vllm_cli_args_on_cpu.py b/tests/workers/rollout/test_vllm_cli_args_on_cpu.py
+index 1db46ab..f5b2f10 100644
+--- a/tests/workers/rollout/test_vllm_cli_args_on_cpu.py
++++ b/tests/workers/rollout/test_vllm_cli_args_on_cpu.py
+@@ -11,6 +11,7 @@
+ # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
++# Modified by the SynCo authors (2026): see SYNCO_MODIFICATIONS.md at the root of this directory.
+ 
+ import json
+ 
+@@ -46,10 +47,20 @@ class TestBuildCliArgsFromConfig:
+         result = build_cli_args_from_config(config)
+         assert result == ["--enable-prefix-caching"]
+ 
+-    def test_bool_false(self):
+-        """Bool False is skipped entirely."""
++    def test_bool_false_negatable(self):
++        """Bool False on a vLLM BooleanOptionalAction arg emits '--no-<key>'.
++
++        Regression: enable_prefix_caching=False was previously skipped, leaving
++        vLLM at its auto-enable default so prefix caching stayed ON (OOM on H200).
++        """
+         config = {"enable-prefix-caching": False}
+         result = build_cli_args_from_config(config)
++        assert result == ["--no-enable-prefix-caching"]
++
++    def test_bool_false_non_negatable(self):
++        """Bool False on a pure store_true flag is skipped (no '--no-' form exists)."""
++        config = {"disable-log-stats": False}
++        result = build_cli_args_from_config(config)
+         assert result == []
+ 
+     def test_none_value(self):
+@@ -89,7 +100,8 @@ class TestBuildCliArgsFromConfig:
+         config = {
+             "tensor-parallel-size": 4,
+             "enable-prefix-caching": True,
+-            "disable-log-requests": False,
++            "disable-log-stats": False,  # pure store_true -> skipped on False
++            "enforce-eager": False,  # negatable -> becomes --no-enforce-eager
+             "lora-path": None,
+             "cudagraph-capture-sizes": [1, 2, 4, 8],
+             "max-model-len": 2048,
+@@ -106,8 +118,11 @@ class TestBuildCliArgsFromConfig:
+         assert "--max-model-len" in result
+         assert "2048" in result
+ 
+-        # Check skipped values are not present
+-        assert "--disable-log-requests" not in result
++        # Negatable bool False -> --no- form present
++        assert "--no-enforce-eager" in result
++        # Pure store_true False and None are skipped entirely
++        assert "--disable-log-stats" not in result
++        assert "--no-disable-log-stats" not in result
+         assert "--lora-path" not in result
+ 
+     def test_preserves_order(self):
+diff --git a/verl/experimental/star_ppo/ray_trainer.py b/verl/experimental/star_ppo/ray_trainer.py
+index 9436dc8..7e1ed8f 100644
+--- a/verl/experimental/star_ppo/ray_trainer.py
++++ b/verl/experimental/star_ppo/ray_trainer.py
+@@ -1,3 +1,4 @@
++# Modified by the SynCo authors (2026): see SYNCO_MODIFICATIONS.md at the root of this directory.
+ import asyncio
+ import json
+ import os
+@@ -1937,6 +1938,39 @@ class StarRayTrainer:
+             if "token_level_rewards" not in batch.batch and "token_level_scores" in batch.batch:
+                 batch.batch["token_level_rewards"] = batch.batch["token_level_scores"]
+ 
++        # PATCH (SynCo): GRPO advantage requires `uid` to group
++        # samples that share a baseline. star_ppo's local-pair path only
++        # populates `query_id`; mirror it into `uid` so the upstream
++        # compute_grpo_outcome_advantage path works without modifying
++        # the upstream verl trainer. See SYNCO_MODIFICATIONS.md.
++        #
++        # Grouping differs by agent:
++        #  - Reasoner: K rollouts share one query_id -> group by query_id
++        #    (K samples per group, standard GRPO).
++        #  - Synthesizer: ONE record per query, so query_id grouping gives
++        #    singleton groups -> GRPO degenerates (mean=0, no baseline). Use a
++        #    single batch-level group so the N synthesizer samples in this
++        #    update form one GRPO group (batch-mean baseline). Toggle via env
++        #    STAR_SYNTH_BATCH_LEVEL_GRPO (default on).
++        if "uid" not in batch.non_tensor_batch and "query_id" in batch.non_tensor_batch:
++            synth_batch_level = (
++                os.environ.get("STAR_SYNTH_BATCH_LEVEL_GRPO", "1") == "1"
++            )
++            agent_ids = batch.non_tensor_batch.get("agent_id", None)
++            is_synth_batch = (
++                synth_batch_level
++                and agent_ids is not None
++                and len(agent_ids) > 0
++                and all(str(a) == "synthesizer_agent" for a in agent_ids)
++            )
++            if is_synth_batch:
++                bsz = len(batch.non_tensor_batch["query_id"])
++                batch.non_tensor_batch["uid"] = np.array(
++                    [f"synth_batch_{global_step}"] * bsz, dtype=object
++                )
++            else:
++                batch.non_tensor_batch["uid"] = batch.non_tensor_batch["query_id"]
++
+         batch = compute_advantage(
+             batch,
+             adv_estimator=self.config.algorithm.adv_estimator,
+diff --git a/verl/workers/rollout/vllm_rollout/utils.py b/verl/workers/rollout/vllm_rollout/utils.py
+index 49bae4f..e178faa 100644
+--- a/verl/workers/rollout/vllm_rollout/utils.py
++++ b/verl/workers/rollout/vllm_rollout/utils.py
+@@ -11,6 +11,7 @@
+ # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
++# Modified by the SynCo authors (2026): see SYNCO_MODIFICATIONS.md at the root of this directory.
+ import ctypes
+ import gc
+ import json
+@@ -288,6 +289,53 @@ class SuppressSignalInThread:
+         signal.signal = self.original_signal
+ 
+ 
++_VLLM_NEGATABLE_BOOL_ARGS: set[str] | None = None
++
++
++def _vllm_negatable_bool_args() -> set[str]:
++    """Return the set of vLLM serve boolean args that support a ``--no-<name>`` form.
++
++    vLLM registers ``Optional[bool]`` engine args with ``argparse.BooleanOptionalAction``,
++    which generates both ``--<name>`` and ``--no-<name>``. For those, passing the config
++    value ``False`` must emit ``--no-<name>`` — simply skipping the flag (the old behavior)
++    leaves the option at vLLM's own default, which for e.g. ``enable_prefix_caching`` is
++    "auto-enable", so ``enable_prefix_caching=False`` was silently ignored and prefix
++    caching stayed ON. Pure ``store_true`` flags (e.g. ``disable-log-stats``) are NOT in
++    this set and keep the skip-on-False behavior (passing ``--no-`` to them would error).
++
++    Both underscore and hyphen spellings are included so callers using either key style
++    match. Result is cached; on any probe failure we return an empty set so the caller
++    falls back to the historical skip-on-False behavior rather than crashing rollout boot.
++    """
++    global _VLLM_NEGATABLE_BOOL_ARGS
++    if _VLLM_NEGATABLE_BOOL_ARGS is not None:
++        return _VLLM_NEGATABLE_BOOL_ARGS
++
++    import argparse
++
++    dests: set[str] = set()
++    try:
++        from vllm.engine.arg_utils import AsyncEngineArgs
++        from vllm.utils import FlexibleArgumentParser
++
++        parser = FlexibleArgumentParser()
++        parser = AsyncEngineArgs.add_cli_args(parser)
++        for action in parser._actions:
++            if isinstance(action, argparse.BooleanOptionalAction):
++                dest = action.dest
++                dests.add(dest)
++                dests.add(dest.replace("_", "-"))
++    except Exception as e:  # noqa: BLE001 — never let arg-probing break rollout launch
++        logger.warning(
++            "Could not probe vLLM parser for negatable bool args (%s); "
++            "boolean False values will be skipped (may leave --no- flags unset).",
++            e,
++        )
++
++    _VLLM_NEGATABLE_BOOL_ARGS = dests
++    return _VLLM_NEGATABLE_BOOL_ARGS
++
++
+ def build_cli_args_from_config(config: dict[str, Any]) -> list[str]:
+     """
+     Convert a config dictionary to CLI arguments for vLLM server.
+@@ -295,7 +343,8 @@ def build_cli_args_from_config(config: dict[str, Any]) -> list[str]:
+     Handles different value types appropriately:
+     - None: skipped
+     - bool True: adds '--key'
+-    - bool False: skipped
++    - bool False: adds '--no-key' if vLLM exposes it as a negatable
++      (BooleanOptionalAction) arg, otherwise skipped
+     - list: expands to '--key item1 item2 ...'
+     - empty list: skipped (vLLM uses nargs="+" which requires at least one value)
+     - dict: JSON serialized
+@@ -307,6 +356,7 @@ def build_cli_args_from_config(config: dict[str, Any]) -> list[str]:
+     Returns:
+         List of CLI argument strings
+     """
++    negatable = _vllm_negatable_bool_args()
+     cli_args = []
+     for k, v in config.items():
+         if v is None:
+@@ -314,6 +364,8 @@ def build_cli_args_from_config(config: dict[str, Any]) -> list[str]:
+         if isinstance(v, bool):
+             if v:
+                 cli_args.append(f"--{k}")
++            elif k in negatable:
++                cli_args.append(f"--no-{k}")
+         elif isinstance(v, list):
+             if not v:
+                 # Skip empty lists - vLLM uses nargs="+" which requires at least one value

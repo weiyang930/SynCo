@@ -1,0 +1,292 @@
+hydra:
+  searchpath:
+    - file://verl/trainer/config
+
+defaults:
+  - star_ppo_trainer
+  - _self_
+
+trainer:
+  experiment_name: star_qr_retrieve_select_answer_f1
+  # Validation control:
+  # 1) run one validation pass before training starts
+  val_before_train: false
+  # 2) run validation every N training steps
+  test_freq: 50
+  # 3) save checkpoint every N training steps
+  save_freq: 300
+  llm_engines:
+    - model_id: rewrite_agent_7b
+      nnodes: 1
+      n_gpus_per_node: 8
+      accelerator_type: null
+      strategy: fsdp2
+      model_path: ${oc.env:REWRITE_MODEL_PATH,null}
+    - model_id: selector_agent_7b
+      nnodes: 1
+      n_gpus_per_node: 8
+      accelerator_type: null
+      strategy: fsdp2
+      model_path: ${oc.env:SELECT_MODEL_PATH,null}
+    - model_id: answer_agent_14b
+      nnodes: 2
+      n_gpus_per_node: 8
+      accelerator_type: null
+      strategy: fsdp2
+      model_path: ${oc.env:ANSWER_MODEL_PATH,null}
+  routing:
+    policy: epoch_dynamic
+    refresh_every_epoch: true
+
+actor_rollout_ref:
+  # Star detached actor/rollout workers require hybrid_engine to be disabled.
+  hybrid_engine: false
+  actor:
+    # You can override via env: ACTOR_PPO_MINI_BATCH_SIZE.
+    ppo_mini_batch_size: ${oc.decode:${oc.env:ACTOR_PPO_MINI_BATCH_SIZE,64}}
+    # Required when dynamic batch sizing is disabled.
+    # You can override via env: ACTOR_PPO_MICRO_BATCH_SIZE_PER_GPU.
+    ppo_micro_batch_size_per_gpu: ${oc.decode:${oc.env:ACTOR_PPO_MICRO_BATCH_SIZE_PER_GPU,2}}
+  ref:
+    # Required when ref policy is enabled and dynamic batch sizing is disabled.
+    # You can override via env: REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU.
+    log_prob_micro_batch_size_per_gpu: ${oc.decode:${oc.env:REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU,1}}
+  rollout:
+    # Required by rollout config. Options: hf / vllm / sglang / trtllm.
+    # You can override via env: ROLLOUT_NAME.
+    name: ${oc.env:ROLLOUT_NAME,vllm}
+    # Use TP=2 by default.
+    # You can override via env: ROLLOUT_TENSOR_MODEL_PARALLEL_SIZE.
+    tensor_model_parallel_size: ${oc.decode:${oc.env:ROLLOUT_TENSOR_MODEL_PARALLEL_SIZE,2}}
+    # Free vLLM cache around weight update to avoid OOM in update_weights_from_ipc.
+    free_cache_engine: ${oc.decode:${oc.env:ROLLOUT_FREE_CACHE_ENGINE,true}}
+    # Increase per-inference prompt budget from default 512 to reduce max_tokens=0 risk.
+    prompt_length: ${oc.decode:${oc.env:ROLLOUT_PROMPT_LENGTH,8192}}
+    # Leave more GPU headroom for actor/critic + weight sync clones on colocated setup.
+    # Lower if OOM; try VLLM_USE_V1=0 if v1 fails.
+    gpu_memory_utilization: ${oc.decode:${oc.env:ROLLOUT_GPU_MEMORY_UTILIZATION,0.20}}
+    max_num_batched_tokens: ${oc.decode:${oc.env:ROLLOUT_MAX_NUM_BATCHED_TOKENS,2048}}
+    max_num_seqs: ${oc.decode:${oc.env:ROLLOUT_MAX_NUM_SEQS,128}}
+    # Disable prefix caching to save memory when OOM; set ROLLOUT_ENABLE_PREFIX_CACHING=true to re-enable.
+    enable_prefix_caching: ${oc.decode:${oc.env:ROLLOUT_ENABLE_PREFIX_CACHING,false}}
+    checkpoint_engine:
+      # Must be larger than the largest single weight tensor during actor->rollout sync.
+      # You can override via env: ROLLOUT_UPDATE_WEIGHTS_BUCKET_MB.
+      update_weights_bucket_megabytes: ${oc.decode:${oc.env:ROLLOUT_UPDATE_WEIGHTS_BUCKET_MB,3072}}
+    # Required when dynamic batch sizing is disabled.
+    # You can override via env: ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU.
+    log_prob_micro_batch_size_per_gpu: ${oc.decode:${oc.env:ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU,2}}
+
+critic:
+  model:
+    # Avoid fallback to repo default '~/models/...' which may not exist on cluster.
+    # Reuse actor model path unless explicitly overridden elsewhere.
+    path: ${oc.select:actor_rollout_ref.model.path,null}
+    tokenizer_path: ${oc.select:actor_rollout_ref.model.path,null}
+  # Keep critic micro-batch explicit to avoid config assertion failures.
+  # You can override via env: CRITIC_PPO_MICRO_BATCH_SIZE_PER_GPU.
+  ppo_micro_batch_size_per_gpu: ${oc.decode:${oc.env:CRITIC_PPO_MICRO_BATCH_SIZE_PER_GPU,2}}
+
+data:
+  dataset_root: ${oc.env:DATASET_ROOT,${oc.env:UNITYMAS_ROOT}/datasets/data/verl_format_data}
+  dataset_name: ${oc.env:DATASET_NAME,hotpotqa}
+  # Defaults can still be overridden by env or CLI.
+  train_files: ${oc.env:TRAIN_PARQUET,${data.dataset_root}/${data.dataset_name}/train_verl.parquet}
+  val_files: ${oc.env:VAL_PARQUET,${data.dataset_root}/${data.dataset_name}/test_verl.parquet}
+  # Batch sizes (smaller defaults for multi-node stability); can be overridden by env.
+  train_batch_size: ${oc.decode:${oc.env:GEN_BATCH_SIZE,128}}
+  gen_batch_size: ${oc.decode:${oc.env:GEN_BATCH_SIZE,128}}
+  val_batch_size: ${oc.decode:${oc.env:VAL_BATCH_SIZE,128}}
+
+ray_kwargs:
+  ray_init:
+    # This workflow launches Ray head/workers outside main_ppo, so connect to existing cluster.
+    address: auto
+
+star:
+  workflow:
+    name: graph_query_rewrite_retrieve_select_answer
+    # Disable hard per-node timeout by default; avoid aborting whole training
+    # when a single LLM call is temporarily queued for >300s.
+    llm_timeout_seconds: 0
+    max_inflight_queries: 128
+    max_parallel_rollouts_per_model: 128
+    # Truncate each LLM node prompt by token length before inference.
+    # Keep this slightly smaller than rollout.prompt_length to reserve chat-template overhead.
+    per_infer_prompt_max_tokens: ${oc.decode:${oc.env:STAR_PER_INFER_PROMPT_MAX_TOKENS,8064}}
+    prompt_truncation_margin: ${oc.decode:${oc.env:STAR_PROMPT_TRUNCATION_MARGIN,128}}
+    debug:
+      # Enable concise workflow trace for debugging:
+      # STAR_WORKFLOW_DEBUG=true
+      enabled: ${oc.decode:${oc.env:STAR_WORKFLOW_DEBUG,false}}
+      # Trace only one query in each sampled batch (0-based local index in batch).
+      sample_index: ${oc.decode:${oc.env:STAR_WORKFLOW_DEBUG_SAMPLE_INDEX,0}}
+      # Max chars for each logged field.
+      max_chars: ${oc.decode:${oc.env:STAR_WORKFLOW_DEBUG_MAX_CHARS,160}}
+      # Print once every N batches to avoid noisy logs.
+      every_n_batches: ${oc.decode:${oc.env:STAR_WORKFLOW_DEBUG_EVERY_N_BATCHES,20}}
+    runner:
+      path: pkg://verl.experimental.star_ppo.workflows.graph_workflow
+      name: GraphWorkflowRunner
+    # HotpotQA-like parquet rows:
+    # - extra_info.question
+    # - extra_info.answer
+    # - reward_model.ground_truth
+    question_candidates: ["question", "query", "problem", "extra_info.question"]
+    ground_truth_candidates: ["answer", "ground_truth", "extra_info.answer", "reward_model.ground_truth", "reward_model"]
+    tools:
+      retriever:
+        # Built-in adapter with query(question, N, max_attempts).
+        type: query_api_pool
+        api_urls: ["http://retriever.example.com:8000/retrieve"]
+        timeout_seconds: 5
+    graph:
+      start_nodes: ["rewrite"]
+      end_nodes: ["answer"]
+      max_steps: 8
+      stop_on_end: true
+      outcome_reward:
+        type: f1
+        source: answer.final_answer
+        weight: 1.0
+      nodes:
+        rewrite:
+          type: llm
+          model_id: rewrite_agent_7b
+          agent_id: rewrite_agent
+          output_key: rewritten_query
+          parser:
+            type: tag
+            open_tag: "<rewrite_query>"
+            close_tag: "</rewrite_query>"
+            valid_reward: 0.0
+            invalid_reward: -1.0
+          reward:
+            format_weight: 1.0
+            share_outcome: true
+          prompt_template: |
+            You are a query rewrite assistant.
+
+            You are given:
+            - One original question.
+
+            Your task:
+            1. Rewrite the original question into one concise and searchable retrieval query.
+            2. Keep critical entities, time constraints, and comparison conditions.
+            3. Do not answer the question; only rewrite it for retrieval.
+
+            Output format (strict):
+            <rewrite_query>your rewritten query</rewrite_query>
+
+            Rules:
+            - Output exactly one <rewrite_query>...</rewrite_query> block.
+            - Do not output any extra text, explanation, markdown, or other tags.
+
+            Original question:
+            {question}
+          next:
+            - to: retrieve
+
+        retrieve:
+          type: tool
+          tool: retriever
+          input_template: "{rewrite.rewritten_query}"
+          top_k: 5
+          max_attempts: 5
+          output_key: retrieved_docs
+          next:
+            - to: select_docs
+
+        select_docs:
+          type: llm
+          model_id: selector_agent_7b
+          agent_id: select_docs_agent
+          output_key: selected_docs
+          parser:
+            type: tag
+            open_tag: "<selected_docs>"
+            close_tag: "</selected_docs>"
+            valid_reward: 0.0
+            invalid_reward: -1.0
+          reward:
+            format_weight: 1.0
+            share_outcome: true
+          prompt_template: |
+            You are an evidence selection assistant.
+
+            You are given:
+            - The original question
+            - A rewritten retrieval query
+            - Retrieved documents
+
+            Your task:
+            1. Select only the most answer-relevant evidence from retrieved documents.
+            2. Prefer precise facts (names, dates, numbers, relations) over long passages.
+            3. If evidence is weak, keep the best available clues and do not fabricate facts.
+
+            Output format (strict):
+            <selected_docs>concise evidence text</selected_docs>
+
+            Rules:
+            - Output exactly one <selected_docs>...</selected_docs> block.
+            - No extra text, explanation, markdown, or other tags.
+            - Keep selected evidence concise and directly useful for final answering.
+
+            Original question:
+            {question}
+
+            Rewritten query:
+            {rewrite.rewritten_query}
+
+            Retrieved documents:
+            {retrieve.retrieved_docs}
+          next:
+            - to: answer
+
+        answer:
+          type: llm
+          model_id: answer_agent_14b
+          agent_id: answer_agent
+          output_key: final_answer
+          parser:
+            type: tag
+            open_tag: "<final_answer>"
+            close_tag: "</final_answer>"
+            valid_reward: 0.0
+            invalid_reward: -1.0
+          reward:
+            format_weight: 1.0
+            share_outcome: true
+          prompt_template: |
+            You are a final answer generation assistant.
+
+            You are given:
+            - The original question
+            - Selected evidence
+
+            Your task:
+            1. Infer the final answer strictly from the selected evidence.
+            2. Provide a short direct answer only (no reasoning).
+            3. If evidence is insufficient, output Unknown.
+
+            Output format (strict):
+            <final_answer>your answer here</final_answer>
+
+            Example style:
+            Question: When did the lightning thief book come out?
+            Answer: <final_answer>2005</final_answer>
+            Question: Are Calochone and Adlumia both plants?
+            Answer: <final_answer>yes</final_answer>
+            Question: Which us president appears as a character in the play annie?
+            Answer: <final_answer>Franklin D. Roosevelt</final_answer>
+
+            Rules:
+            - Output exactly one <final_answer>...</final_answer> block.
+            - No extra text, explanation, markdown, or other tags.
+
+            Original question:
+            {question}
+
+            Selected evidence:
+            {select_docs.selected_docs}
+          next: []

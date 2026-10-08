@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1060" viewBox="0 0 1600 1060">
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#1f2937"/>
+    </marker>
+    <marker id="arrowBlue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrowGreen" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#15803d"/>
+    </marker>
+    <style>
+      .title { font-family: "Avenir Next", "Helvetica Neue", Arial, sans-serif; font-size: 34px; font-weight: 800; fill: #172026; }
+      .subtitle { font-family: "Avenir Next", "Helvetica Neue", Arial, sans-serif; font-size: 17px; fill: #44515a; }
+      .section { font-family: "Avenir Next", "Helvetica Neue", Arial, sans-serif; font-size: 21px; font-weight: 800; fill: #172026; }
+      .label { font-family: "Avenir Next", "Helvetica Neue", Arial, sans-serif; font-size: 15px; fill: #263238; }
+      .small { font-family: "Avenir Next", "Helvetica Neue", Arial, sans-serif; font-size: 13px; fill: #455a64; }
+      .tiny { font-family: "Avenir Next", "Helvetica Neue", Arial, sans-serif; font-size: 12px; fill: #51636d; }
+      .mono { font-family: "SFMono-Regular", "Consolas", monospace; font-size: 12px; fill: #263238; }
+      .panel { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 2; rx: 24; }
+      .panelBlue { fill: #eff6ff; stroke: #93c5fd; stroke-width: 2; rx: 24; }
+      .panelGreen { fill: #f0fdf4; stroke: #86efac; stroke-width: 2; rx: 24; }
+      .panelAmber { fill: #fffbeb; stroke: #fcd34d; stroke-width: 2; rx: 24; }
+      .panelRose { fill: #fff1f2; stroke: #fda4af; stroke-width: 2; rx: 24; }
+      .node { fill: #ffffff; stroke: #64748b; stroke-width: 2; rx: 16; }
+      .blue { fill: #dbeafe; stroke: #3b82f6; stroke-width: 2; rx: 16; }
+      .green { fill: #dcfce7; stroke: #22c55e; stroke-width: 2; rx: 16; }
+      .amber { fill: #fef3c7; stroke: #f59e0b; stroke-width: 2; rx: 16; }
+      .rose { fill: #ffe4e6; stroke: #fb7185; stroke-width: 2; rx: 16; }
+      .violet { fill: #ede9fe; stroke: #8b5cf6; stroke-width: 2; rx: 16; }
+      .arrow { stroke: #1f2937; stroke-width: 2.4; fill: none; marker-end: url(#arrow); }
+      .arrowBlue { stroke: #2563eb; stroke-width: 2.4; fill: none; marker-end: url(#arrowBlue); }
+      .arrowGreen { stroke: #15803d; stroke-width: 2.4; fill: none; marker-end: url(#arrowGreen); }
+      .dash { stroke-dasharray: 8 7; }
+      .shadow { filter: drop-shadow(0 8px 18px rgba(15, 23, 42, 0.10)); }
+    </style>
+  </defs>
+
+  <rect width="1600" height="1060" fill="#f6f8fb"/>
+
+  <text x="48" y="58" class="title">M-ASK Inference, State Update, and Turn-Level Reward Logic</text>
+  <text x="50" y="90" class="subtitle">The runner owns the structured knowledge state; agents output minimal tags and actions.</text>
+
+  <rect x="50" y="130" width="240" height="82" class="node shadow"/>
+  <text x="82" y="162" class="section">Question q</text>
+  <text x="82" y="188" class="tiny">original task input</text>
+
+  <rect x="355" y="115" width="250" height="112" class="blue shadow"/>
+  <text x="390" y="149" class="section">Planning Agent</text>
+  <text x="385" y="176" class="small">input: question only</text>
+  <text x="385" y="198" class="tiny">output: &lt;q_i&gt;, &lt;a_i&gt;, &lt;final_answer&gt;</text>
+  <path d="M290 171 L355 171" class="arrow"/>
+
+  <rect x="675" y="112" width="390" height="145" class="panelBlue shadow"/>
+  <text x="705" y="147" class="section">Knowledge State K<tspan baseline-shift="sub" font-size="13">0</tspan></text>
+  <text x="705" y="177" class="mono">{</text>
+  <text x="728" y="198" class="mono">question: q,</text>
+  <text x="728" y="219" class="mono">thinking_trajectory: [τ1, τ2, ...],</text>
+  <text x="728" y="240" class="mono">predicted_answer: a0</text>
+  <text x="705" y="261" class="mono">}</text>
+  <path d="M605 171 L675 171" class="arrowBlue"/>
+
+  <rect x="1132" y="130" width="300" height="94" class="green shadow"/>
+  <text x="1175" y="164" class="section">Answer Agent</text>
+  <text x="1160" y="191" class="small">input: q + thinking_trajectory</text>
+  <text x="1160" y="211" class="tiny">writes predicted_answer</text>
+  <path d="M1065 184 L1132 184" class="arrowGreen"/>
+
+  <rect x="90" y="300" width="1420" height="530" class="panel shadow"/>
+  <text x="122" y="337" class="section">Iterative search-update loop: t = 1 ... max_turns</text>
+  <text x="122" y="365" class="small">Stop if SearchAgent outputs &lt;end&gt;, or when max_turns is reached. Current default max_turns = 3.</text>
+
+  <rect x="125" y="415" width="235" height="120" class="blue"/>
+  <text x="160" y="448" class="section">Search Agent</text>
+  <text x="150" y="476" class="small">input:</text>
+  <text x="150" y="497" class="tiny">q + thinking trajectory</text>
+  <text x="150" y="516" class="tiny">+ previous search queries</text>
+  <text x="150" y="536" class="tiny">output: &lt;search&gt;query&lt;/search&gt; or &lt;end&gt;</text>
+
+  <rect x="430" y="415" width="195" height="120" class="amber"/>
+  <text x="475" y="448" class="section">Retriever</text>
+  <text x="458" y="476" class="small">input: search query</text>
+  <text x="458" y="497" class="tiny">output: documents D</text>
+  <text x="458" y="516" class="tiny">non-trainable tool</text>
+
+  <rect x="695" y="415" width="235" height="120" class="green"/>
+  <text x="740" y="448" class="section">Summary Agent</text>
+  <text x="720" y="476" class="small">input:</text>
+  <text x="720" y="497" class="tiny">search_query + retrieved_docs</text>
+  <text x="720" y="517" class="tiny">output: &lt;evidence&gt;E&lt;/evidence&gt;</text>
+
+  <rect x="1000" y="405" width="260" height="140" class="violet"/>
+  <text x="1046" y="438" class="section">Update Agent</text>
+  <text x="1027" y="466" class="small">input:</text>
+  <text x="1027" y="487" class="tiny">context_dict = K_t</text>
+  <text x="1027" y="506" class="tiny">new_info = {query, evidence}</text>
+  <text x="1027" y="526" class="tiny">output: &lt;update&gt;t_i&lt;/update&gt; or &lt;add&gt;t_new&lt;/add&gt;</text>
+
+  <rect x="1320" y="415" width="155" height="120" class="rose"/>
+  <text x="1347" y="448" class="section">Runner</text>
+  <text x="1343" y="476" class="small">deterministic</text>
+  <text x="1343" y="497" class="tiny">state update</text>
+  <text x="1343" y="517" class="tiny">K_t -> K_{t+1}</text>
+
+  <path d="M360 475 L430 475" class="arrow"/>
+  <path d="M625 475 L695 475" class="arrow"/>
+  <path d="M930 475 L1000 475" class="arrow"/>
+  <path d="M1260 475 L1320 475" class="arrow"/>
+
+  <path d="M243 535 C243 610, 1165 610, 1320 535" class="arrowGreen dash"/>
+  <text x="548" y="632" class="small">if &lt;end&gt;: terminate workflow immediately; otherwise continue</text>
+
+  <rect x="410" y="680" width="360" height="98" class="panelBlue"/>
+  <text x="438" y="711" class="section">K<tspan baseline-shift="sub" font-size="13">t+1</tspan>: updated knowledge state</text>
+  <text x="438" y="740" class="mono">thinking_trajectory:</text>
+  <text x="458" y="761" class="mono">update existing τ_i  OR  add τ_new</text>
+
+  <rect x="900" y="680" width="330" height="98" class="green"/>
+  <text x="940" y="711" class="section">Answer Agent</text>
+  <text x="930" y="740" class="small">input: q + thinking_trajectory only</text>
+  <text x="930" y="761" class="tiny">output: &lt;final_answer&gt;...&lt;/final_answer&gt;</text>
+  <path d="M1398 535 C1398 654, 1230 654, 1230 729" class="arrowGreen"/>
+  <path d="M900 729 L770 729" class="arrowGreen"/>
+  <path d="M770 680 C650 610, 300 610, 243 535" class="arrowBlue dash"/>
+
+  <rect x="55" y="880" width="695" height="125" class="panelGreen shadow"/>
+  <text x="86" y="916" class="section">Reward assignment</text>
+  <text x="86" y="946" class="mono">r_plan = F1(a_plan, y)</text>
+  <text x="86" y="971" class="mono">r_answer_t = F1(predicted_answer_t, y)</text>
+  <text x="86" y="996" class="mono">r_iter_t = F1(predicted_answer_t, y) - F1(predicted_answer_{t-1}, y)</text>
+
+  <rect x="810" y="880" width="690" height="125" class="panelAmber shadow"/>
+  <text x="840" y="916" class="section">Who receives which reward?</text>
+  <text x="840" y="946" class="small">Planning Agent: absolute F1. Answer Agent: absolute F1 at each call.</text>
+  <text x="840" y="971" class="small">Search / Summary / Update Agents: shared turn-level ΔF1.</text>
+  <text x="840" y="996" class="small">Every trainable node also receives its own format penalty.</text>
+
+  <path d="M1432 177 C1500 247, 1496 350, 1398 415" class="arrowBlue dash"/>
+  <text x="1225" y="282" class="tiny">latest predicted_answer lives inside K</text>
+</svg>
